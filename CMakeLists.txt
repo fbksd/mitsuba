@@ -57,6 +57,11 @@ if(MSVC)
   list(REMOVE_DUPLICATES CMAKE_CXX_FLAGS_RELWITHDEBINFO)
 endif()
 
+# turn on c++11
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+include_directories(/home/jonas/Documents/Doutorado/Documents/Benchmark/Code/BenchmarkSystem/include)
+link_directories(/home/jonas/Documents/Doutorado/Documents/Benchmark/Code/build-BenchmarkSystem-Desktop-Debug/)
+
 # Set CMAKE_BUILD_TYPE to Release by default
 if (MTS_CMAKE_INIT AND DEFINED CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING

@@ -37,6 +37,9 @@
 #include <fstream>
 #include <stdexcept>
 #include <boost/algorithm/string.hpp>
+#include <QCoreApplication>
+#include <QTimer>
+#include <QEventLoop>
 
 #if defined(__WINDOWS__)
 #include <mitsuba/core/getopt.h>
@@ -418,6 +421,8 @@ int mitsuba_app(int argc, char **argv) {
 }
 
 int mts_main(int argc, char **argv) {
+    QCoreApplication app(argc, argv);
+
 	/* Initialize the core framework */
 	Class::staticInitialization();
 	Object::staticInitialization();
@@ -467,6 +472,10 @@ int mts_main(int argc, char **argv) {
 	WSACleanup();
 #endif
 
+    QTimer timer;
+    QObject::connect(&timer, &QTimer::timeout, &app, &QCoreApplication::quit);
+    timer.start();
+    app.exec();
 	return retval;
 }
 

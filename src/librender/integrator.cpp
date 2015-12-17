@@ -20,6 +20,243 @@
 #include <mitsuba/render/integrator.h>
 #include <mitsuba/render/renderproc.h>
 
+#include <mitsuba/core/plugin.h>
+#include <mitsuba/core/random.h>
+#include "mitsuba/render/renderserveradapter.h"
+#include "Benchmark/RenderingServer/RenderingServer.h"
+#include <QEventLoop>
+
+// Global sample parameters variable. Declared as 'extern' in scene.h and filled through the system.
+SampleAdapter sampleAdapter;
+#define BENCHMARK_SERVER_ON
+
+
+/**
+ *  Discret Probability Density Function sampler.
+ *
+ *  Permite gerar amostras de acordo com uma pdf por partes dada como entrada no construtor.
+ *  Cada valor retornado em sampler() está no intervalo [ 0, fv.size() ).
+ *  O custo de sample() é \f$ O(log(n)) \f$ no tamanho de fv e o construtor tem custo linear.
+ */
+class DPDF
+{
+    friend class DPDF2;
+public:
+    DPDF(const float* fv, unsigned int n):
+        m_pdf(n),
+        m_cpdf(n)
+    {
+        float sum = std::accumulate(fv, fv + n, 0.f);
+        m_funcInt = sum ;
+
+        float nf = 1.f / sum;
+        sum = 0.f;
+
+        for(unsigned int i=0; i < n; ++i)
+        {
+            m_pdf[i] = fv[i] * nf;
+            m_cpdf[i] = sum + m_pdf[i];
+            sum += m_pdf[i];
+        }
+
+        //Garante a última entrada de m_cpdf será 1.f. Pode não ser devido a erro numérico.
+        m_cpdf.back() = 1.f;
+    }
+
+    DPDF(const std::vector<float>& fv):
+        m_pdf(fv.size()),
+        m_cpdf(fv.size())
+    {
+        float sum = accumulate(fv.begin(), fv.end(), 0.f);
+        m_funcInt = sum ;
+
+        float nf = 1.f / sum;
+        sum = 0.f;
+
+        for(unsigned int i=0; i < fv.size(); ++i)
+        {
+            m_pdf[i] = fv[i] * nf;
+            m_cpdf[i] = sum + m_pdf[i];
+            sum += m_pdf[i];
+        }
+
+        //Garante a última entrada de m_cpdf será 1.f. Pode não ser devido a erro numérico.
+        m_cpdf.back() = 1.f;
+    }
+
+    //! Gera um índice aleatório.
+    unsigned int sample(float r, float* pdf = NULL)
+    {
+        float *p = std::lower_bound(&(*m_cpdf.begin()), &(*m_cpdf.end()), r);
+        unsigned int i = p - &(*m_cpdf.begin());
+
+        if(pdf && m_pdf.size()) *pdf = m_pdf[i];
+
+        return i;
+    }
+
+private:
+    std::vector<float> m_pdf;
+    std::vector<float> m_cpdf;
+    float m_funcInt;
+};
+
+
+class DPDF2
+{
+public:
+    DPDF2(const float* fv, int nx, int ny)
+    {
+        m_dpdfX.reserve(nx);
+
+        for(int x = 0; x < nx; ++x)
+            m_dpdfX.push_back(new DPDF(&fv[x*ny], ny));
+
+        std::vector<float> marginalFunc;
+        marginalFunc.reserve(nx);
+
+        for(int x = 0; x < nx; ++x)
+            marginalFunc.push_back(m_dpdfX[x]->m_funcInt);
+
+        m_marginal = new DPDF(marginalFunc);
+    }
+
+    ~DPDF2()
+    {
+        for(unsigned int i=0; i< m_dpdfX.size(); ++i)
+            delete m_dpdfX[i];
+
+        delete m_marginal;
+    }
+
+    //! Gera um índice aleatório.
+    void sample(float u, float v, int* x, int* y, float* pdf = NULL)
+    {
+        float pdfs[2];
+
+        *y = m_marginal->sample(u, &pdfs[1]);
+        *x = m_dpdfX[*y]->sample(v, &pdfs[0]);
+
+        if(pdf) *pdf = pdfs[0] * pdfs[1];
+    }
+
+private:
+    int m_nx, m_ny;
+    std::vector<DPDF*> m_dpdfX;
+    DPDF* m_marginal;
+};
+
+
+
+class PixelSampler
+{
+public:
+    PixelSampler(int beginx, int endx, int beginy, int endy, int n, bool isSPP)
+    {
+        m_beginX = beginx;
+        m_endX = endx;
+        m_beginY = beginy;
+        m_endY = endy;
+        m_width = m_endX - m_beginX;
+        m_height = m_endY - m_beginY;
+        m_xPos = m_beginX;
+        m_yPos = m_beginY;
+        m_sparseSampleIndex = 0;
+        m_random = new Random();
+
+        if(isSPP)
+        {
+            m_spp = n;
+            m_sparseSampleCount = 0;
+        }
+        else
+        {
+            m_spp = n / (float)(m_width*m_height);
+            m_sparseSampleCount = n % (m_width*m_height);
+        }
+
+        if(m_sparseSampleCount)
+            m_stage = SPARSE;
+        if(m_spp)
+            m_stage = SPP;
+    }
+
+    virtual bool nextPixel(Point2i* pos)
+    {
+        int x = m_xPos, y = m_yPos;
+
+        switch(m_stage)
+        {
+            case SPP:
+                if(m_yPos == m_endY || m_xPos == m_endX)
+                {
+                    m_stage = SPARSE;
+                    goto SPARSE_CASE;
+                }
+
+                if(++m_xPos == m_endX)
+                {
+                    m_xPos = m_beginX;
+                    ++m_yPos;
+                }
+                break;
+            case SPARSE:
+                SPARSE_CASE:
+                if(m_sparseSampleIndex++ == m_sparseSampleCount)
+                    return false;
+                x = m_beginX + m_random->nextUInt(m_width);
+                y = m_beginY + m_random->nextUInt(m_height);
+        }
+
+        pos->x = x;
+        pos->y = y;
+        return true;
+    }
+
+protected:
+    enum Stage
+    {
+        SPP,
+        SPARSE
+    };
+
+    int m_beginX;
+    int m_endX;
+    int m_beginY;
+    int m_endY;
+    int m_width;
+    int m_height;
+    int m_xPos, m_yPos;
+    int m_spp;
+    int m_sparseSampleCount;
+    int m_sparseSampleIndex;
+    Stage m_stage;
+    ref<Random> m_random;
+};
+
+class AdaptivePixelSampler: public PixelSampler
+{
+public:
+    AdaptivePixelSampler(int beginx, int endx, int beginy, int endy, int n, bool isSPP, const float* pdf):
+        PixelSampler(beginx, endx, beginy, endy, n, isSPP),
+        dpdf(pdf, endx - beginx, endy - beginy)
+    {}
+
+    virtual bool nextPixel(Point2i* pos)
+    {
+        bool flag = PixelSampler::nextPixel(pos);
+        int x = 0, y = 0;
+        dpdf.sample(pos->x, pos->y, &x, &y);
+        pos->x = x + m_beginX;
+        pos->y = y + m_beginY;
+        return flag;
+    }
+
+private:
+    DPDF2 dpdf;
+};
+
+
 MTS_NAMESPACE_BEGIN
 
 Integrator::Integrator(const Properties &props)
@@ -43,10 +280,16 @@ void Integrator::configureSampler(const Scene *scene, Sampler *sampler) {
 const Integrator *Integrator::getSubIntegrator(int idx) const { return NULL; }
 
 SamplingIntegrator::SamplingIntegrator(const Properties &props)
- : Integrator(props) { }
+ : Integrator(props)
+{
+    inBuffer = outBuffer = nullptr;
+}
 
 SamplingIntegrator::SamplingIntegrator(Stream *stream, InstanceManager *manager)
- : Integrator(stream, manager) { }
+ : Integrator(stream, manager)
+{
+    inBuffer = outBuffer = nullptr;
+}
 
 void SamplingIntegrator::serialize(Stream *stream, InstanceManager *manager) const {
 	Integrator::serialize(stream, manager);
@@ -95,37 +338,50 @@ void SamplingIntegrator::cancel() {
 bool SamplingIntegrator::render(Scene *scene,
 		RenderQueue *queue, const RenderJob *job,
 		int sceneResID, int sensorResID, int samplerResID) {
-	ref<Scheduler> sched = Scheduler::getInstance();
-	ref<Sensor> sensor = static_cast<Sensor *>(sched->getResource(sensorResID));
-	ref<Film> film = sensor->getFilm();
 
-	size_t nCores = sched->getCoreCount();
-	const Sampler *sampler = static_cast<const Sampler *>(sched->getResource(samplerResID, 0));
-	size_t sampleCount = sampler->getSampleCount();
+#ifdef BENCHMARK_SERVER_ON
+    ref<Scheduler> sched = Scheduler::getInstance();
+    m_scene =  static_cast<Scene *>(sched->getResource(sceneResID));
+    m_sensor = static_cast<Sensor *>(sched->getResource(sensorResID));
+    m_originalSampler = static_cast<Sampler *>(sched->getResource(samplerResID, 0));
 
-	Log(EInfo, "Starting render job (%ix%i, " SIZE_T_FMT " %s, " SIZE_T_FMT
-		" %s, " SSE_STR ") ..", film->getCropSize().x, film->getCropSize().y,
-		sampleCount, sampleCount == 1 ? "sample" : "samples", nCores,
-		nCores == 1 ? "core" : "cores");
+    QEventLoop eventLoop;
+    m_server = new RenderServerAdapter(this);
+    QObject::connect(m_server, &RenderServerAdapter::finishRender, &eventLoop, &QEventLoop::quit);
+    eventLoop.exec();
+    return true;
+#else
+    ref<Scheduler> sched = Scheduler::getInstance();
+    ref<Sensor> sensor = static_cast<Sensor *>(sched->getResource(sensorResID));
+    ref<Film> film = sensor->getFilm();
+    size_t nCores = sched->getCoreCount();
+    const Sampler *sampler = static_cast<const Sampler *>(sched->getResource(samplerResID, 0));
+    size_t sampleCount = sampler->getSampleCount();
 
-	/* This is a sampling-based integrator - parallelize */
-	ref<ParallelProcess> proc = new BlockedRenderProcess(job,
-		queue, scene->getBlockSize());
-	int integratorResID = sched->registerResource(this);
-	proc->bindResource("integrator", integratorResID);
-	proc->bindResource("scene", sceneResID);
-	proc->bindResource("sensor", sensorResID);
-	proc->bindResource("sampler", samplerResID);
-	scene->bindUsedResources(proc);
-	bindUsedResources(proc);
-	sched->schedule(proc);
+    Log(EInfo, "Starting render job (%ix%i, " SIZE_T_FMT " %s, " SIZE_T_FMT
+        " %s, " SSE_STR ") ..", film->getCropSize().x, film->getCropSize().y,
+        sampleCount, sampleCount == 1 ? "sample" : "samples", nCores,
+        nCores == 1 ? "core" : "cores");
 
-	m_process = proc;
-	sched->wait(proc);
-	m_process = NULL;
-	sched->unregisterResource(integratorResID);
+    /* This is a sampling-based integrator - parallelize */
+    ref<ParallelProcess> proc = new BlockedRenderProcess(job,
+        queue, scene->getBlockSize());
+    int integratorResID = sched->registerResource(this);
+    proc->bindResource("integrator", integratorResID);
+    proc->bindResource("scene", sceneResID);
+    proc->bindResource("sensor", sensorResID);
+    proc->bindResource("sampler", samplerResID);
+    scene->bindUsedResources(proc);
+    bindUsedResources(proc);
+    sched->schedule(proc);
 
-	return proc->getReturnStatus() == ParallelProcess::ESuccess;
+    m_process = proc;
+    sched->wait(proc);
+    m_process = NULL;
+    sched->unregisterResource(integratorResID);
+
+    return proc->getReturnStatus() == ParallelProcess::ESuccess;
+#endif
 }
 
 void SamplingIntegrator::bindUsedResources(ParallelProcess *) const {
@@ -185,6 +441,166 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 			sampler->advance();
 		}
 	}
+}
+
+void SamplingIntegrator::getSceneInfo(SceneInfo *info)
+{
+    Vector2i filmSize = m_sensor->getFilm()->getSize();
+    info->set<int>("width", filmSize.x);
+    info->set<int>("height", filmSize.y);
+    float shutterOpen = m_sensor->getShutterOpen();
+    float shutterTime = m_sensor->getShutterOpenTime();
+    info->set<float>("shutter_open", shutterOpen);
+    info->set<float>("shutter_close", shutterOpen + shutterTime);
+    info->set<bool>("has_motionblur", shutterTime > 0.0001f);
+
+    // TODO:
+//    auto shapes = m_scene->getShapes();
+//    bool hasAreaLights = false;
+//    for(Shape* shape : shapes)
+//    {
+//        shape->isEmitter()
+//        if(light->IsDeltaLight() == false)
+//        {
+//            hasAreaLights = true;
+//            break;
+//        }
+//    }
+//    info->set<bool>("has_area_lights", hasAreaLights);
+}
+
+void SamplingIntegrator::setMaxSPP(int maxSPP)
+{
+    this->maxSPP = maxSPP;
+}
+
+void SamplingIntegrator::setSampleLayout(const SampleLayout& layout)
+{
+    sampleAdapter.setLayout(layout);
+
+    if(inBuffer)
+        delete[] inBuffer;
+    if(outBuffer)
+        delete[] outBuffer;
+
+    Vector2i filmSize = m_scene->getFilm()->getSize();
+    inBuffer = new float[maxSPP * filmSize.x * filmSize.y * layout.getInputSize()];
+    outBuffer = new float[maxSPP * filmSize.x * filmSize.y * layout.getOutputSize()];
+    m_server->setSampleBuffers(inBuffer, outBuffer);
+}
+
+void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, int* resultSize)
+{
+    auto sensorSize = m_sensor->getFilm()->getSize();
+    PixelSampler pixelSampler(0, sensorSize.x, 0, sensorSize.y, numSamples, isSPP);
+
+    int totalNumSamples = isSPP ? sensorSize.x * sensorSize.y * numSamples : numSamples;
+    *resultSize = totalNumSamples;
+    sampleAdapter.setSamples(inBuffer, outBuffer, totalNumSamples);
+
+    Properties props("MixSampler");
+    props.setInteger("sampleCount", numSamples);
+    props.setBoolean("isSPP", isSPP);
+    props.setInteger("width", sensorSize.x);
+    props.setInteger("height", sensorSize.y);
+    ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), props));
+
+    render(sampler.get(), &pixelSampler);
+}
+
+void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const CropWindow& crop, int* resultSize)
+{
+    int w = crop.endX - crop.beginX;
+    int h = crop.endY - crop.beginY;
+    PixelSampler pixelSampler(crop.beginX, crop.endX, crop.beginY, crop.endY, numSamples, isSPP);
+
+    int totalNumSamples = isSPP ? w * h * numSamples : numSamples;
+    *resultSize = totalNumSamples;
+    sampleAdapter.setSamples(inBuffer, outBuffer, totalNumSamples);
+
+    Properties props("MixSampler");
+    props.setInteger("sampleCount", numSamples);
+    props.setBoolean("isSPP", isSPP);
+    props.setInteger("width", w);
+    props.setInteger("height", h);
+    ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), props));
+
+    render(sampler.get(), &pixelSampler);
+}
+
+void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const float* pdf, int* resultSize)
+{
+    auto sensorSize = m_sensor->getFilm()->getSize();
+    AdaptivePixelSampler pixelSampler(0, sensorSize.x, 0, sensorSize.y, numSamples, isSPP, pdf);
+
+    int totalNumSamples = isSPP ? sensorSize.x * sensorSize.y * numSamples : numSamples;
+    *resultSize = totalNumSamples;
+    sampleAdapter.setSamples(inBuffer, outBuffer, totalNumSamples);
+
+    Properties props("MixSampler");
+    props.setInteger("sampleCount", numSamples);
+    props.setBoolean("isSPP", isSPP);
+    props.setInteger("width", sensorSize.x);
+    props.setInteger("height", sensorSize.y);
+    ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), props));
+
+    render(sampler.get(), &pixelSampler);
+}
+
+void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler)
+{
+    Float diffScaleFactor = 1.0f / std::sqrt((Float) sampler->getSampleCount());
+
+    bool needsApertureSample = m_sensor->needsApertureSample();
+    bool needsTimeSample = m_sensor->needsTimeSample();
+
+    RadianceQueryRecord rRec(m_scene, sampler);
+    Point2 apertureSample(0.5f);
+    Float timeSample = 0.5f;
+    RayDifferential sensorRay;
+
+    uint32_t queryType = RadianceQueryRecord::ESensorRay;
+
+    if (!m_sensor->getFilm()->hasAlpha()) /* Don't compute an alpha channel if we don't have to */
+        queryType &= ~RadianceQueryRecord::EOpacity;
+
+    Point2i offset;
+    while(pixelSampler->nextPixel(&offset))
+    {
+        sampler->generate(offset);
+
+        for (size_t j = 0; j<sampler->getSampleCount(); j++) {
+            rRec.newQuery(queryType, m_sensor->getMedium());
+            Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
+
+            if (needsApertureSample)
+                apertureSample = rRec.nextSample2D();
+            if (needsTimeSample)
+                timeSample = rRec.nextSample1D();
+
+            samplePos.x = sampleAdapter.set(IMAGE_X, samplePos.x);
+            samplePos.y = sampleAdapter.set(IMAGE_Y, samplePos.y);
+            apertureSample.x = sampleAdapter.set(LENS_U, apertureSample.x);
+            apertureSample.y = sampleAdapter.set(LENS_V, apertureSample.y);
+            timeSample = sampleAdapter.set(TIME, timeSample);
+
+            Spectrum spec = m_sensor->sampleRayDifferential(
+                sensorRay, samplePos, apertureSample, timeSample);
+
+            sensorRay.scaleDifferential(diffScaleFactor);
+
+            spec *= Li(sensorRay, rRec);
+
+            float r, g, b;
+            spec.toLinearRGB(r, g, b);
+            sampleAdapter.set(COLOR_R, r);
+            sampleAdapter.set(COLOR_G, g);
+            sampleAdapter.set(COLOR_B, b);
+            sampleAdapter.next();
+
+            sampler->advance();
+        }
+    }
 }
 
 MonteCarloIntegrator::MonteCarloIntegrator(const Properties &props) : SamplingIntegrator(props) {

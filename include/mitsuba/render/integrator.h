@@ -24,6 +24,12 @@
 #include <mitsuba/core/properties.h>
 #include <mitsuba/render/shape.h>
 
+class SceneInfo;
+class SampleLayout;
+class CropWindow;
+class RenderServerAdapter;
+class PixelSampler;
+
 MTS_NAMESPACE_BEGIN
 
 /**
@@ -420,6 +426,14 @@ public:
 	/// Serialize this integrator to a binary data stream
 	void serialize(Stream *stream, InstanceManager *manager) const;
 
+    // Implements the RenderingServer benchmark API
+    void getSceneInfo(SceneInfo *scene);
+    void setMaxSPP(int maxSPP);
+    void setSampleLayout(const SampleLayout& layout);
+    void evaluateSamples(bool isSPP, int numSamples, int* resultSize);
+    void evaluateSamples(bool isSPP, int numSamples, const CropWindow& crop, int* resultSize);
+    void evaluateSamples(bool isSPP, int numSamples, const float* pdf, int* resultSize);
+
 	MTS_DECLARE_CLASS()
 protected:
 	/// Create a integrator
@@ -433,6 +447,18 @@ protected:
 protected:
 	/// Used to temporarily cache a parallel process while it is in operation
 	ref<ParallelProcess> m_process;
+
+private:
+    // Benchmark stuff
+    void render(Sampler* sampler, PixelSampler* pixelSampler);
+
+    RenderServerAdapter* m_server;
+    float* inBuffer;
+    float* outBuffer;
+    int maxSPP;
+    Scene* m_scene;
+    Sensor* m_sensor;
+    Sampler* m_originalSampler;
 };
 
 /*

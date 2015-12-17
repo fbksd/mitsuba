@@ -34,6 +34,8 @@
 #include <mitsuba/render/volume.h>
 #include <mitsuba/render/phase.h>
 
+class SampleAdapter;
+
 MTS_NAMESPACE_BEGIN
 
 /**
@@ -1168,6 +1170,9 @@ private:
 };
 
 MTS_NAMESPACE_END
+
+// Global sample parameters variable. Defined in serverrenderer.cpp and filled through the system.
+extern SampleAdapter sampleAdapter;
 
 #include <mitsuba/render/records.inl>
 
