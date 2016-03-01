@@ -29,6 +29,7 @@ class SampleLayout;
 class CropWindow;
 class RenderServerAdapter;
 class PixelSampler;
+class SamplesPipe;
 
 MTS_NAMESPACE_BEGIN
 
@@ -428,8 +429,6 @@ public:
 
     // Implements the RenderingServer benchmark API
     void getSceneInfo(SceneInfo *scene);
-    void setMaxSPP(int maxSPP);
-    void setSampleLayout(const SampleLayout& layout);
     void evaluateSamples(bool isSPP, int numSamples, int* resultSize);
     void evaluateSamples(bool isSPP, int numSamples, const CropWindow& crop, int* resultSize);
     void evaluateSamples(bool isSPP, int numSamples, const float* pdf, int* resultSize);
@@ -450,7 +449,7 @@ protected:
 
 private:
     // Benchmark stuff
-    void render(Sampler* sampler, PixelSampler* pixelSampler);
+    void render(Sampler* sampler, PixelSampler* pixelSampler, SamplesPipe& pipe);
 
     RenderServerAdapter* m_server;
     float* inBuffer;

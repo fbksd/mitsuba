@@ -8,8 +8,6 @@ RenderServerAdapter::RenderServerAdapter(SamplingIntegrator* integrator):
     integrator(integrator)
 {
     QObject::connect(server, &RenderingServer::getSceneInfo, this, &RenderServerAdapter::getSceneInfo);
-    QObject::connect(server, &RenderingServer::setMaxSPP, this, &RenderServerAdapter::setMaxSPP);
-    QObject::connect(server, &RenderingServer::setSampleLayout, this, &RenderServerAdapter::setSampleLayout);
     QObject::connect(server, &RenderingServer::evaluateSamples, this, &RenderServerAdapter::evaluateSamples);
     QObject::connect(server, &RenderingServer::evaluateSamplesCrop, this, &RenderServerAdapter::evaluateSamplesCrop);
     QObject::connect(server, &RenderingServer::evaluateSamplesPDF, this, &RenderServerAdapter::evaluateSamplesPDF);
@@ -17,29 +15,9 @@ RenderServerAdapter::RenderServerAdapter(SamplingIntegrator* integrator):
     server->startServer(2227);
 }
 
-RenderServerAdapter::~RenderServerAdapter()
-{
-
-}
-
-void RenderServerAdapter::setSampleBuffers(float *input, float *output)
-{
-    server->setSampleBuffers(input, output);
-}
-
-void RenderServerAdapter::setMaxSPP(int maxSPP)
-{
-    integrator->setMaxSPP(maxSPP);
-}
-
 void RenderServerAdapter::getSceneInfo(SceneInfo *scene)
 {
     integrator->getSceneInfo(scene);
-}
-
-void RenderServerAdapter::setSampleLayout(const SampleLayout &layout)
-{
-    integrator->setSampleLayout(layout);
 }
 
 void RenderServerAdapter::evaluateSamples(bool isSPP, int numSamples, int *resultSize)

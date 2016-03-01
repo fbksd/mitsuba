@@ -26,8 +26,6 @@
 #include "Benchmark/RenderingServer/RenderingServer.h"
 #include <QEventLoop>
 
-// Global sample parameters variable. Declared as 'extern' in scene.h and filled through the system.
-SampleAdapter sampleAdapter;
 #define BENCHMARK_SERVER_ON
 
 
@@ -469,26 +467,6 @@ void SamplingIntegrator::getSceneInfo(SceneInfo *info)
 //    info->set<bool>("has_area_lights", hasAreaLights);
 }
 
-void SamplingIntegrator::setMaxSPP(int maxSPP)
-{
-    this->maxSPP = maxSPP;
-}
-
-void SamplingIntegrator::setSampleLayout(const SampleLayout& layout)
-{
-    sampleAdapter.setLayout(layout);
-
-    if(inBuffer)
-        delete[] inBuffer;
-    if(outBuffer)
-        delete[] outBuffer;
-
-    Vector2i filmSize = m_scene->getFilm()->getSize();
-    inBuffer = new float[maxSPP * filmSize.x * filmSize.y * layout.getInputSize()];
-    outBuffer = new float[maxSPP * filmSize.x * filmSize.y * layout.getOutputSize()];
-    m_server->setSampleBuffers(inBuffer, outBuffer);
-}
-
 void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, int* resultSize)
 {
     auto sensorSize = m_sensor->getFilm()->getSize();
@@ -496,7 +474,6 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, int* result
 
     int totalNumSamples = isSPP ? sensorSize.x * sensorSize.y * numSamples : numSamples;
     *resultSize = totalNumSamples;
-    sampleAdapter.setSamples(inBuffer, outBuffer, totalNumSamples);
 
     Properties props("MixSampler");
     props.setInteger("sampleCount", numSamples);
@@ -505,7 +482,8 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, int* result
     props.setInteger("height", sensorSize.y);
     ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), props));
 
-    render(sampler.get(), &pixelSampler);
+    SamplesPipe pipe;
+    render(sampler.get(), &pixelSampler, pipe);
 }
 
 void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const CropWindow& crop, int* resultSize)
@@ -516,7 +494,6 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const CropW
 
     int totalNumSamples = isSPP ? w * h * numSamples : numSamples;
     *resultSize = totalNumSamples;
-    sampleAdapter.setSamples(inBuffer, outBuffer, totalNumSamples);
 
     Properties props("MixSampler");
     props.setInteger("sampleCount", numSamples);
@@ -525,7 +502,8 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const CropW
     props.setInteger("height", h);
     ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), props));
 
-    render(sampler.get(), &pixelSampler);
+    SamplesPipe pipe;
+    render(sampler.get(), &pixelSampler, pipe);
 }
 
 void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const float* pdf, int* resultSize)
@@ -535,7 +513,6 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const float
 
     int totalNumSamples = isSPP ? sensorSize.x * sensorSize.y * numSamples : numSamples;
     *resultSize = totalNumSamples;
-    sampleAdapter.setSamples(inBuffer, outBuffer, totalNumSamples);
 
     Properties props("MixSampler");
     props.setInteger("sampleCount", numSamples);
@@ -544,10 +521,11 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, const float
     props.setInteger("height", sensorSize.y);
     ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), props));
 
-    render(sampler.get(), &pixelSampler);
+    SamplesPipe pipe;
+    render(sampler.get(), &pixelSampler, pipe);
 }
 
-void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler)
+void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler, SamplesPipe& pipe)
 {
     Float diffScaleFactor = 1.0f / std::sqrt((Float) sampler->getSampleCount());
 
@@ -570,6 +548,8 @@ void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler)
         sampler->generate(offset);
 
         for (size_t j = 0; j<sampler->getSampleCount(); j++) {
+            SampleBuffer sampleBuffer = pipe.getBuffer();
+
             rRec.newQuery(queryType, m_sensor->getMedium());
             Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
 
@@ -578,11 +558,11 @@ void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler)
             if (needsTimeSample)
                 timeSample = rRec.nextSample1D();
 
-            samplePos.x = sampleAdapter.set(IMAGE_X, samplePos.x);
-            samplePos.y = sampleAdapter.set(IMAGE_Y, samplePos.y);
-            apertureSample.x = sampleAdapter.set(LENS_U, apertureSample.x);
-            apertureSample.y = sampleAdapter.set(LENS_V, apertureSample.y);
-            timeSample = sampleAdapter.set(TIME, timeSample);
+            samplePos.x = sampleBuffer.set(IMAGE_X, samplePos.x);
+            samplePos.y = sampleBuffer.set(IMAGE_Y, samplePos.y);
+            apertureSample.x = sampleBuffer.set(LENS_U, apertureSample.x);
+            apertureSample.y = sampleBuffer.set(LENS_V, apertureSample.y);
+            timeSample = sampleBuffer.set(TIME, timeSample);
 
             Spectrum spec = m_sensor->sampleRayDifferential(
                 sensorRay, samplePos, apertureSample, timeSample);
@@ -593,10 +573,10 @@ void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler)
 
             float r, g, b;
             spec.toLinearRGB(r, g, b);
-            sampleAdapter.set(COLOR_R, r);
-            sampleAdapter.set(COLOR_G, g);
-            sampleAdapter.set(COLOR_B, b);
-            sampleAdapter.next();
+            sampleBuffer.set(COLOR_R, r);
+            sampleBuffer.set(COLOR_G, g);
+            sampleBuffer.set(COLOR_B, b);
+            pipe << sampleBuffer;
 
             sampler->advance();
         }
