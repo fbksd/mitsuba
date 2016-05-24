@@ -119,7 +119,7 @@ public:
 		m_undefined.serialize(stream);
 	}
 
-	Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec) const {
+    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, SampleBuffer*) const {
 		Spectrum result(m_undefined);
 
 		if (!rRec.rayIntersect(ray))

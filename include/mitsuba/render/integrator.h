@@ -30,6 +30,7 @@ class CropWindow;
 class RenderServerAdapter;
 class PixelSampler;
 class SamplesPipe;
+class SampleBuffer;
 
 MTS_NAMESPACE_BEGIN
 
@@ -326,7 +327,7 @@ public:
 	 * a radiance query record, which makes this request more precise.
 	 */
 	virtual Spectrum Li(const RayDifferential &ray,
-		RadianceQueryRecord &rRec) const = 0;
+        RadianceQueryRecord &rRec, SampleBuffer* sampleBuffer = nullptr) const = 0;
 
 	/**
 	 * \brief Estimate the irradiance at a given surface point

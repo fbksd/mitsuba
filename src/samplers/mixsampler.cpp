@@ -18,6 +18,7 @@ public:
         int h = props.getInteger("height", 1);
         m_numPixels = w * h;
         m_pixelIndex = 0;
+        m_sparseSampleCount = 0;
 
         if(isSPP)
             m_spp = n;

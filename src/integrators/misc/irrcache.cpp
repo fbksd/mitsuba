@@ -253,7 +253,7 @@ public:
 		}
 	}
 
-	Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec) const {
+    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, SampleBuffer*) const {
 		Intersection &its = rRec.its;
 
 		if (m_indirectOnly && (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance))

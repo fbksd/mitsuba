@@ -18,6 +18,7 @@
 
 #include <mitsuba/render/scene.h>
 #include <mitsuba/core/statistics.h>
+#include "Benchmark/RenderingServer/samples.h"
 
 MTS_NAMESPACE_BEGIN
 
@@ -116,8 +117,8 @@ public:
 	MIPathTracer(Stream *stream, InstanceManager *manager)
 		: MonteCarloIntegrator(stream, manager) { }
 
-	Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
-		/* Some aliases and local variables */
+    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, SampleBuffer* sampleBuffer) const {
+        /* Some aliases and local variables */
 		const Scene *scene = rRec.scene;
 		Intersection &its = rRec.its;
 		RayDifferential ray(r);
@@ -143,6 +144,24 @@ public:
 			}
 
 			const BSDF *bsdf = its.getBSDF(ray);
+
+            // Write features to sample buffer
+            if(sampleBuffer && rRec.depth < 3)
+            {
+                int num = rRec.depth - 1;
+                sampleBuffer->set(WORLD_X, num, its.p.x);
+                sampleBuffer->set(WORLD_Y, num, its.p.y);
+                sampleBuffer->set(WORLD_Z, num, its.p.z);
+                sampleBuffer->set(NORMAL_X, num, its.shFrame.n.x);
+                sampleBuffer->set(NORMAL_Y, num, its.shFrame.n.y);
+                sampleBuffer->set(NORMAL_Z, num, its.shFrame.n.z);
+                Spectrum diffReflectance = bsdf->getDiffuseReflectance(rRec.its);
+                Float r = 0.f, g = 0.f, b = 0.f;
+                diffReflectance.toLinearRGB(r, g, b);
+                sampleBuffer->set(TEXTURE_COLOR_R, num, r);
+                sampleBuffer->set(TEXTURE_COLOR_G, num, g);
+                sampleBuffer->set(TEXTURE_COLOR_B, num, b);
+            }
 
 			/* Possibly include emitted radiance if requested */
 			if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
@@ -173,7 +192,14 @@ public:
 
 			if (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance &&
 				(bsdf->getType() & BSDF::ESmooth)) {
-				Spectrum value = scene->sampleEmitterDirect(dRec, rRec.nextSample2D());
+                auto sample2d = rRec.nextSample2D();
+                if(rRec.depth == 1 && sampleBuffer)
+                {
+                    sampleBuffer->set(LIGHT_X, sample2d.x);
+                    sampleBuffer->set(LIGHT_Y, sample2d.y);
+                }
+
+                Spectrum value = scene->sampleEmitterDirect(dRec, sample2d);
 				if (!value.isZero()) {
 					const Emitter *emitter = static_cast<const Emitter *>(dRec.object);
 

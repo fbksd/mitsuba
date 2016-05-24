@@ -17,6 +17,7 @@
 */
 
 #include <mitsuba/render/scene.h>
+#include "Benchmark/RenderingServer/samples.h"
 
 MTS_NAMESPACE_BEGIN
 
@@ -143,7 +144,7 @@ public:
 			sampler->request2DArray(m_bsdfSamples);
 	}
 
-	Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
+    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, SampleBuffer* sampleBuffer) const {
 		/* Some aliases and local variables */
 		const Scene *scene = rRec.scene;
 		Intersection &its = rRec.its;
@@ -186,6 +187,24 @@ public:
 			return Li;
 		}
 
+        // Write features to sample buffer
+        if(sampleBuffer && rRec.depth == 1)
+        {
+            int num = rRec.depth - 1;
+            sampleBuffer->set(WORLD_X, num, its.p.x);
+            sampleBuffer->set(WORLD_Y, num, its.p.y);
+            sampleBuffer->set(WORLD_Z, num, its.p.z);
+            sampleBuffer->set(NORMAL_X, num, its.shFrame.n.x);
+            sampleBuffer->set(NORMAL_Y, num, its.shFrame.n.y);
+            sampleBuffer->set(NORMAL_Z, num, its.shFrame.n.z);
+            Spectrum diffReflectance = bsdf->getDiffuseReflectance(rRec.its);
+            Float r = 0.f, g = 0.f, b = 0.f;
+            diffReflectance.toLinearRGB(r, g, b);
+            sampleBuffer->set(TEXTURE_COLOR_R, num, r);
+            sampleBuffer->set(TEXTURE_COLOR_G, num, g);
+            sampleBuffer->set(TEXTURE_COLOR_B, num, b);
+        }
+
 		/* ==================================================================== */
 		/*                          Emitter sampling                          */
 		/* ==================================================================== */
@@ -215,6 +234,13 @@ public:
 
 		DirectSamplingRecord dRec(its);
 		if (bsdf->getType() & BSDF::ESmooth) {
+            // Write light sample
+            if(sampleBuffer && rRec.depth == 1 && numDirectSamples)
+            {
+                sampleBuffer->set(LIGHT_X, sampleArray[0].x);
+                sampleBuffer->set(LIGHT_Y, sampleArray[0].y);
+            }
+
 			/* Only use direct illumination sampling when the surface's
 			   BSDF has smooth (i.e. non-Dirac delta) component */
 			for (size_t i=0; i<numDirectSamples; ++i) {

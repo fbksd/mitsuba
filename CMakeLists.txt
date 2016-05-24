@@ -59,8 +59,9 @@ endif()
 
 # turn on c++11
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-include_directories(/home/jonas/Documents/Doutorado/Documents/Benchmark/Code/BenchmarkSystem/include)
-link_directories(/home/jonas/Documents/Doutorado/Documents/Benchmark/Code/build-BenchmarkSystem-Desktop-Debug/)
+# Benchmark lib
+include_directories(${PROJECT_SOURCE_DIR}/../../Benchmark/include)
+link_directories(${PROJECT_BINARY_DIR}/../../Benchmark)
 
 # Set CMAKE_BUILD_TYPE to Release by default
 if (MTS_CMAKE_INIT AND DEFINED CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE)

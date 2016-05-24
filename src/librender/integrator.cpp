@@ -450,7 +450,10 @@ void SamplingIntegrator::getSceneInfo(SceneInfo *info)
     float shutterTime = m_sensor->getShutterOpenTime();
     info->set<float>("shutter_open", shutterOpen);
     info->set<float>("shutter_close", shutterOpen + shutterTime);
-    info->set<bool>("has_motionblur", shutterTime > 0.0001f);
+    info->set<bool>("has_motion_blur", shutterTime > 0.0001f);
+    size_t sampleCount = m_originalSampler->getSampleCount();
+    info->set<int>("max_spp", sampleCount);
+    info->set<int>("max_samples", sampleCount*filmSize.x*filmSize.y);
 
     // TODO:
 //    auto shapes = m_scene->getShapes();
@@ -569,7 +572,7 @@ void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler, Sa
 
             sensorRay.scaleDifferential(diffScaleFactor);
 
-            spec *= Li(sensorRay, rRec);
+            spec *= Li(sensorRay, rRec, &sampleBuffer);
 
             float r, g, b;
             spec.toLinearRGB(r, g, b);

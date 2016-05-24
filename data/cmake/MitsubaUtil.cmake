@@ -70,7 +70,8 @@ endmacro()
 
 # Option for precompiled headers
 if (PCH_MSVC OR PCH_GCC)
-  set (MTS_PCH_DEFAULT ON)
+  # PCH was causing errors with the benchmark mod
+  set (MTS_PCH_DEFAULT OFF)
 else ()
   set (MTS_PCH_DEFAULT OFF)
 endif ()
