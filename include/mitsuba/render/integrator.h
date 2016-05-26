@@ -23,16 +23,16 @@
 #include <mitsuba/core/netobject.h>
 #include <mitsuba/core/properties.h>
 #include <mitsuba/render/shape.h>
+#include "Benchmark/Core/SampleLayout.h"
 
 class SceneInfo;
-class SampleLayout;
 class CropWindow;
-class RenderServerAdapter;
-class PixelSampler;
 class SamplesPipe;
 class SampleBuffer;
 
 MTS_NAMESPACE_BEGIN
+
+class PixelSampler;
 
 /**
  * \brief Abstract integrator base-class; does not make any assumptions on
@@ -452,10 +452,8 @@ private:
     // Benchmark stuff
     void render(Sampler* sampler, PixelSampler* pixelSampler, SamplesPipe& pipe);
 
-    RenderServerAdapter* m_server;
-    float* inBuffer;
-    float* outBuffer;
     int maxSPP;
+    SampleLayout m_layout;
     Scene* m_scene;
     Sensor* m_sensor;
     Sampler* m_originalSampler;

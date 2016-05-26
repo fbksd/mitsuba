@@ -22,12 +22,12 @@
 
 #include <mitsuba/core/plugin.h>
 #include <mitsuba/core/random.h>
-#include "mitsuba/render/renderserveradapter.h"
 #include "Benchmark/RenderingServer/RenderingServer.h"
 #include <QEventLoop>
 
 #define BENCHMARK_SERVER_ON
 
+MTS_NAMESPACE_BEGIN
 
 /**
  *  Discret Probability Density Function sampler.
@@ -253,10 +253,6 @@ public:
 private:
     DPDF2 dpdf;
 };
-
-
-MTS_NAMESPACE_BEGIN
-
 Integrator::Integrator(const Properties &props)
  : NetworkedObject(props) { }
 
@@ -280,13 +276,11 @@ const Integrator *Integrator::getSubIntegrator(int idx) const { return NULL; }
 SamplingIntegrator::SamplingIntegrator(const Properties &props)
  : Integrator(props)
 {
-    inBuffer = outBuffer = nullptr;
 }
 
 SamplingIntegrator::SamplingIntegrator(Stream *stream, InstanceManager *manager)
  : Integrator(stream, manager)
 {
-    inBuffer = outBuffer = nullptr;
 }
 
 void SamplingIntegrator::serialize(Stream *stream, InstanceManager *manager) const {
@@ -344,8 +338,29 @@ bool SamplingIntegrator::render(Scene *scene,
     m_originalSampler = static_cast<Sampler *>(sched->getResource(samplerResID, 0));
 
     QEventLoop eventLoop;
-    m_server = new RenderServerAdapter(this);
-    QObject::connect(m_server, &RenderServerAdapter::finishRender, &eventLoop, &QEventLoop::quit);
+    std::unique_ptr<RenderingServer> server(new RenderingServer);
+    QObject::connect(server.get(), &RenderingServer::setParameters,
+        [this](int, const SampleLayout& layout, float*, float*)
+        { m_layout = layout; }
+    );
+    QObject::connect(server.get(), &RenderingServer::getSceneInfo,
+        [this](SceneInfo* scene)
+        { this->getSceneInfo(scene); }
+    );
+    QObject::connect(server.get(), &RenderingServer::evaluateSamples,
+        [this](bool isSPP, int numSamples, int* resultSize)
+        { this->evaluateSamples(isSPP, numSamples, resultSize); }
+    );
+    QObject::connect(server.get(), &RenderingServer::evaluateSamplesCrop,
+        [this](bool isSPP, int numSamples, const CropWindow& crop, int* resultSize)
+        { this->evaluateSamples(isSPP, numSamples, crop, resultSize); }
+    );
+    QObject::connect(server.get(), &RenderingServer::evaluateSamplesPDF,
+        [this](bool isSPP, int numSamples, const float* pdf, int* resultSize)
+        { this->evaluateSamples(isSPP, numSamples, pdf, resultSize); }
+    );
+    QObject::connect(server.get(), &RenderingServer::finishRender, &eventLoop, &QEventLoop::quit);
+    server->startServer(2227);
     eventLoop.exec();
     return true;
 #else
