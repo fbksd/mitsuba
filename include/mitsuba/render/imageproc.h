@@ -55,7 +55,7 @@ protected:
 	 * \param blockSize
 	 *    Size of the generated square pixel blocks
 	 */
-	void init(const Point2i &offset, const Vector2i &size, uint32_t blockSize);
+    void init(const Point2i &offset, const Vector2i &size, uint32_t blockSize, int spp = 0, int sampleSize = 0);
 
 	/// Protected constructor
 	inline BlockedImageProcess() { }
@@ -76,6 +76,9 @@ protected:
 	int m_stepsLeft, m_numBlocksTotal;
 	int m_numBlocksGenerated;
 	int m_blockSize;
+    int m_spp;
+    int m_sampleSize;
+    size_t m_currentPipeOffset;
 };
 
 MTS_NAMESPACE_END

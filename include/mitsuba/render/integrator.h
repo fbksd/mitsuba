@@ -400,7 +400,7 @@ public:
 	 */
 	virtual void renderBlock(const Scene *scene, const Sensor *sensor,
 		Sampler *sampler, ImageBlock *block, const bool &stop,
-		const std::vector< TPoint2<uint8_t> > &points) const;
+        const std::vector< TPoint2<uint8_t> > &points, size_t pipeOffset, bool seekPipeByPixel) const;
 
 	/**
 	 * <tt>NetworkedObject</tt> implementation:
@@ -457,6 +457,11 @@ private:
     Scene* m_scene;
     Sensor* m_sensor;
     Sampler* m_originalSampler;
+    RenderQueue* m_queue;
+    RenderJob* m_job;
+    int m_sceneResID;
+    int m_sensorResID;
+    int m_samplerResID;
 };
 
 /*

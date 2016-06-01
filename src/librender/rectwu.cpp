@@ -28,6 +28,7 @@ void RectangularWorkUnit::set(const WorkUnit *wu) {
 	const RectangularWorkUnit *rect = static_cast<const RectangularWorkUnit *>(wu);
 	m_offset = rect->m_offset;
 	m_size = rect->m_size;
+    m_pipeOffset = rect->m_pipeOffset;
 }
 
 void RectangularWorkUnit::load(Stream *stream) {
@@ -37,6 +38,7 @@ void RectangularWorkUnit::load(Stream *stream) {
 	m_offset.y = data[1];
 	m_size.x   = data[2];
 	m_size.y   = data[3];
+    m_pipeOffset = stream->readULong();
 }
 
 void RectangularWorkUnit::save(Stream *stream) const {
@@ -46,6 +48,7 @@ void RectangularWorkUnit::save(Stream *stream) const {
 	data[2] = m_size.x;
 	data[3] = m_size.y;
 	stream->writeIntArray(data, 4);
+    stream->writeUInt(m_pipeOffset);
 }
 
 std::string RectangularWorkUnit::toString() const {
@@ -56,4 +59,35 @@ std::string RectangularWorkUnit::toString() const {
 }
 
 MTS_IMPLEMENT_CLASS(RectangularWorkUnit, false, WorkUnit)
+
+
+
+/* ==================================================================== */
+/*                          ContiguousWorkUnit                          */
+/* ==================================================================== */
+
+void ContiguousWorkUnit::set(const WorkUnit *wu) {
+    const ContiguousWorkUnit *rect = static_cast<const ContiguousWorkUnit *>(wu);
+    m_offset = rect->m_offset;
+    m_numSamples = rect->m_numSamples;
+}
+
+void ContiguousWorkUnit::load(Stream *stream) {
+    m_offset = stream->readULong();
+    m_numSamples = stream->readInt();
+}
+
+void ContiguousWorkUnit::save(Stream *stream) const {
+    stream->writeULong(m_offset);
+    stream->writeInt(m_numSamples);
+}
+
+std::string ContiguousWorkUnit::toString() const {
+    std::ostringstream oss;
+    oss << "ContiguousWorkUnit[offset=" << m_offset
+        << ", numSamples=" << m_numSamples << "]";
+    return oss.str();
+}
+
+MTS_IMPLEMENT_CLASS(ContiguousWorkUnit, false, WorkUnit)
 MTS_NAMESPACE_END
