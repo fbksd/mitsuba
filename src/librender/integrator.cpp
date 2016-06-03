@@ -522,10 +522,27 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, int* result
     if(spp)
     {
         ref<Scheduler> sched = Scheduler::getInstance();
+        // replace the sampler that comes with the scene by one with spp samples
+        sched->unregisterResource(m_samplerResID);
+        Properties p;
+        if(math::isPowerOfTwo(spp))
+            p = Properties("ldsampler");
+        else
+            p = Properties("independent");
+        p.setInteger("sampleCount", spp);
+        ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), p));
+        std::vector<SerializableObject *> samplers(sched->getCoreCount());
+        for (size_t i=0; i<sched->getCoreCount(); ++i) {
+            ref<Sampler> clonedSampler = sampler->clone();
+            clonedSampler->incRef();
+            samplers[i] = clonedSampler.get();
+        }
+        m_samplerResID = sched->registerMultiResource(samplers);
+        for (size_t i=0; i<sched->getCoreCount(); ++i)
+            samplers[i]->decRef();
         ref<Sensor> sensor = static_cast<Sensor *>(sched->getResource(m_sensorResID));
         ref<Film> film = sensor->getFilm();
         size_t nCores = sched->getCoreCount();
-        const Sampler *sampler = static_cast<const Sampler *>(sched->getResource(m_samplerResID, 0));
         size_t sampleCount = sampler->getSampleCount();
 
         Log(EInfo, "Starting render job (%ix%i, " SIZE_T_FMT " %s, " SIZE_T_FMT
