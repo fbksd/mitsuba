@@ -149,6 +149,8 @@ public:
             if(sampleBuffer && rRec.depth < 3)
             {
                 int num = rRec.depth - 1;
+                if(num == 0)
+                    sampleBuffer->set(DEPTH, its.t);
                 sampleBuffer->set(WORLD_X, num, its.p.x);
                 sampleBuffer->set(WORLD_Y, num, its.p.y);
                 sampleBuffer->set(WORLD_Z, num, its.p.z);

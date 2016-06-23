@@ -17,6 +17,7 @@
 */
 
 #include <mitsuba/render/sampler.h>
+#include <random>
 
 MTS_NAMESPACE_BEGIN
 
@@ -55,7 +56,8 @@ public:
 	IndependentSampler(const Properties &props) : Sampler(props) {
 		/* Number of samples per pixel when used with a sampling-based integrator */
 		m_sampleCount = props.getSize("sampleCount", 4);
-		m_random = new Random();
+        std::random_device r;
+        m_random = new Random(r());
 	}
 
 	IndependentSampler(Stream *stream, InstanceManager *manager)
