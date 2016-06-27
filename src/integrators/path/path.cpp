@@ -202,7 +202,16 @@ public:
                 }
 
                 Spectrum value = scene->sampleEmitterDirect(dRec, sample2d);
-				if (!value.isZero()) {
+                if(rRec.depth == 1 && sampleBuffer)
+                {
+                    float r = 0.f, g = 0.f, b = 0.f;
+                    value.toLinearRGB(r, g, b);
+                    sampleBuffer->set(DIRECT_LIGHT_R, r);
+                    sampleBuffer->set(DIRECT_LIGHT_G, g);
+                    sampleBuffer->set(DIRECT_LIGHT_B, b);
+                }
+
+                if (!value.isZero()) {
 					const Emitter *emitter = static_cast<const Emitter *>(dRec.object);
 
 					/* Allocate a record for querying the BSDF */

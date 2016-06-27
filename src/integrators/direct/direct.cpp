@@ -244,9 +244,11 @@ public:
 
 			/* Only use direct illumination sampling when the surface's
 			   BSDF has smooth (i.e. non-Dirac delta) component */
+            Spectrum directL;
 			for (size_t i=0; i<numDirectSamples; ++i) {
 				/* Estimate the direct illumination if this is requested */
 				Spectrum value = scene->sampleEmitterDirect(dRec, sampleArray[i]);
+                directL += value;
 				if (!value.isZero()) {
 					const Emitter *emitter = static_cast<const Emitter *>(dRec.object);
 
@@ -269,7 +271,16 @@ public:
 					}
 				}
 			}
-		}
+
+            if(sampleBuffer && rRec.depth == 1 && numDirectSamples)
+            {
+                float r = 0.f, g = 0.f, b = 0.f;
+                directL.toLinearRGB(r, g, b);
+                sampleBuffer->set(DIRECT_LIGHT_R, r);
+                sampleBuffer->set(DIRECT_LIGHT_G, g);
+                sampleBuffer->set(DIRECT_LIGHT_B, b);
+            }
+        }
 
 		/* ==================================================================== */
 		/*                            BSDF sampling                             */
