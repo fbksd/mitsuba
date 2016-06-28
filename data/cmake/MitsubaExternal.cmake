@@ -59,7 +59,7 @@ endif()
 # Qt4 (optional)
 find_package(Qt4 4.7 COMPONENTS
   QtCore QtGui QtXml QtXmlPatterns QtNetwork QtOpenGL)
-CMAKE_DEPENDENT_OPTION(BUILD_GUI "Built the Qt4-based mitsuba GUI." ON
+CMAKE_DEPENDENT_OPTION(BUILD_GUI "Built the Qt4-based mitsuba GUI." OFF
   "QT4_FOUND" OFF)
   
 # System threading library, used for custom options
@@ -269,7 +269,7 @@ if (MTS_DEPENDENCIES AND NOT PYTHON_INCLUDE_DIR AND
       CACHE STRING "Path to the Python include directory.")
 endif()
 find_package (PythonLibs "2.6")
-CMAKE_DEPENDENT_OPTION(BUILD_PYTHON "Build the Python bindings." ON
+CMAKE_DEPENDENT_OPTION(BUILD_PYTHON "Build the Python bindings." OFF
   "PYTHONLIBS_FOUND;mts_boost_PYTHON_FOUND" OFF)
 if (PYTHONLIBS_FOUND AND mts_boost_PYTHON_FOUND)
   set (PYTHON_FOUND TRUE)
