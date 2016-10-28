@@ -434,9 +434,11 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 	if (!sensor->getFilm()->hasAlpha()) /* Don't compute an alpha channel if we don't have to */
 		queryType &= ~RadianceQueryRecord::EOpacity;
 
+#ifdef BENCHMARK_SERVER_ON
     SamplesPipe pipe;
     if(!seekPipeByPixel)
         pipe.seek(pipeOffset);
+#endif
 
 	for (size_t i = 0; i<points.size(); ++i) {
 		Point2i offset = Point2i(points[i]) + Vector2i(block->getOffset());
@@ -444,11 +446,16 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 			break;
 
 		sampler->generate(offset);
+
+#ifdef BENCHMARK_SERVER_ON
         if(seekPipeByPixel)
             pipe.seek(offset.x, offset.y, sampler->getSampleCount(), sensor->getFilm()->getSize().x);
+#endif
 
 		for (size_t j = 0; j<sampler->getSampleCount(); j++) {
+#ifdef BENCHMARK_SERVER_ON
             SampleBuffer sampleBuffer = pipe.getBuffer();
+#endif
 			rRec.newQuery(queryType, sensor->getMedium());
 			Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
 
@@ -457,27 +464,35 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 			if (needsTimeSample)
 				timeSample = rRec.nextSample1D();
 
+#ifdef BENCHMARK_SERVER_ON
             samplePos.x = sampleBuffer.set(IMAGE_X, samplePos.x);
             samplePos.y = sampleBuffer.set(IMAGE_Y, samplePos.y);
             apertureSample.x = sampleBuffer.set(LENS_U, apertureSample.x);
             apertureSample.y = sampleBuffer.set(LENS_V, apertureSample.y);
             timeSample = sampleBuffer.set(TIME, timeSample);
+#endif
 
             Spectrum spec = sensor->sampleRayDifferential(
 				sensorRay, samplePos, apertureSample, timeSample);
 
 			sensorRay.scaleDifferential(diffScaleFactor);
 
+#ifdef BENCHMARK_SERVER_ON
             spec *= Li(sensorRay, rRec, &sampleBuffer);
+#else
+            spec *= Li(sensorRay, rRec, nullptr);
+#endif
 			block->put(samplePos, spec, rRec.alpha);
 			sampler->advance();
 
+#ifdef BENCHMARK_SERVER_ON
             float r, g, b;
             spec.toLinearRGB(r, g, b);
             sampleBuffer.set(COLOR_R, r);
             sampleBuffer.set(COLOR_G, g);
             sampleBuffer.set(COLOR_B, b);
             pipe << sampleBuffer;
+#endif
 		}
 	}
 }
