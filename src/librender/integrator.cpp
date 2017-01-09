@@ -442,7 +442,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
 	for (size_t i = 0; i<points.size(); ++i) {
 		Point2i offset = Point2i(points[i]) + Vector2i(block->getOffset());
-		if (stop)
+        if (stop)
 			break;
 
 		sampler->generate(offset);
@@ -465,6 +465,15 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 				timeSample = rRec.nextSample1D();
 
 #ifdef BENCHMARK_SERVER_ON
+            // Sometimes sample spill out of the correct pixel due to rounding errors.
+            // Trying to fix this here.
+            int x = samplePos.x;
+            int y = samplePos.y;
+            if(x > offset.x)
+                samplePos.x = (offset.x + 1) - Epsilon;
+            if(y > offset.y)
+                samplePos.y = (offset.y + 1) - Epsilon;
+
             samplePos.x = sampleBuffer.set(IMAGE_X, samplePos.x);
             samplePos.y = sampleBuffer.set(IMAGE_Y, samplePos.y);
             apertureSample.x = sampleBuffer.set(LENS_U, apertureSample.x);
@@ -663,6 +672,15 @@ void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler, Sa
 
             rRec.newQuery(queryType, m_sensor->getMedium());
             Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
+
+            // Sometimes sample spill out of the correct pixel due to rounding errors.
+            // Trying to fix this here.
+            int x = samplePos.x;
+            int y = samplePos.y;
+            if(x > offset.x)
+                samplePos.x = (offset.x + 1) - Epsilon;
+            if(y > offset.y)
+                samplePos.y = (offset.y + 1) - Epsilon;
 
             if (needsApertureSample)
                 apertureSample = rRec.nextSample2D();
