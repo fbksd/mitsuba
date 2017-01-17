@@ -600,7 +600,7 @@ void SamplingIntegrator::evaluateSamples(bool isSPP, int numSamples, int* result
         ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), p));
         PixelSampler pixelSampler(0, sensorSize.x, 0, sensorSize.y, remaining, false);
         SamplesPipe pipe;
-        pipe.seek(*resultSize * m_layout.getSampleSize());
+        pipe.seek(size_t(*resultSize) * m_layout.getSampleSize());
         render(sampler.get(), &pixelSampler, pipe);
         *resultSize += remaining;
     }
