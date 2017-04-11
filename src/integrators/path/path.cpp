@@ -133,6 +133,8 @@ public:
 		Spectrum throughput(1.0f);
 		Float eta = 1.0f;
 
+        bool firstNonSpecular = true;
+
 		while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
 			if (!its.isValid()) {
 				/* If no intersection could be found, potentially return
@@ -146,23 +148,43 @@ public:
 			const BSDF *bsdf = its.getBSDF(ray);
 
             // Write features to sample buffer
-            if(sampleBuffer && rRec.depth < 3)
+            if(sampleBuffer)
             {
                 int num = rRec.depth - 1;
-                if(num == 0)
-                    sampleBuffer->set(DEPTH, its.t);
-                sampleBuffer->set(WORLD_X, num, its.p.x);
-                sampleBuffer->set(WORLD_Y, num, its.p.y);
-                sampleBuffer->set(WORLD_Z, num, its.p.z);
-                sampleBuffer->set(NORMAL_X, num, its.shFrame.n.x);
-                sampleBuffer->set(NORMAL_Y, num, its.shFrame.n.y);
-                sampleBuffer->set(NORMAL_Z, num, its.shFrame.n.z);
-                Spectrum diffReflectance = bsdf->getDiffuseReflectance(rRec.its);
-                Float r = 0.f, g = 0.f, b = 0.f;
-                diffReflectance.toLinearRGB(r, g, b);
-                sampleBuffer->set(TEXTURE_COLOR_R, num, r);
-                sampleBuffer->set(TEXTURE_COLOR_G, num, g);
-                sampleBuffer->set(TEXTURE_COLOR_B, num, b);
+                if(num < 2)
+                {
+                    if(num == 0) sampleBuffer->set(DEPTH, its.t);
+
+                    sampleBuffer->set(WORLD_X, num, its.p.x);
+                    sampleBuffer->set(WORLD_Y, num, its.p.y);
+                    sampleBuffer->set(WORLD_Z, num, its.p.z);
+                    sampleBuffer->set(NORMAL_X, num, its.shFrame.n.x);
+                    sampleBuffer->set(NORMAL_Y, num, its.shFrame.n.y);
+                    sampleBuffer->set(NORMAL_Z, num, its.shFrame.n.z);
+                    Spectrum diffReflectance = bsdf->getDiffuseReflectance(rRec.its);
+                    Float r = 0.f, g = 0.f, b = 0.f;
+                    diffReflectance.toLinearRGB(r, g, b);
+                    sampleBuffer->set(TEXTURE_COLOR_R, num, r);
+                    sampleBuffer->set(TEXTURE_COLOR_G, num, g);
+                    sampleBuffer->set(TEXTURE_COLOR_B, num, b);
+                }
+
+                if(firstNonSpecular && !(bsdf->getType() & (BSDF::EDeltaReflection | BSDF::EDeltaTransmission)))
+                {
+                    firstNonSpecular = false;
+                    sampleBuffer->set(WORLD_X_NS, its.p.x);
+                    sampleBuffer->set(WORLD_Y_NS, its.p.y);
+                    sampleBuffer->set(WORLD_Z_NS, its.p.z);
+                    sampleBuffer->set(NORMAL_X_NS, its.shFrame.n.x);
+                    sampleBuffer->set(NORMAL_Y_NS, its.shFrame.n.y);
+                    sampleBuffer->set(NORMAL_Z_NS, its.shFrame.n.z);
+                    Spectrum diffReflectance = bsdf->getDiffuseReflectance(rRec.its);
+                    Float r = 0.f, g = 0.f, b = 0.f;
+                    diffReflectance.toLinearRGB(r, g, b);
+                    sampleBuffer->set(TEXTURE_COLOR_R_NS, r);
+                    sampleBuffer->set(TEXTURE_COLOR_G_NS, g);
+                    sampleBuffer->set(TEXTURE_COLOR_B_NS, b);
+                }
             }
 
 			/* Possibly include emitted radiance if requested */

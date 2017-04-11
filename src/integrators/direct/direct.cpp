@@ -204,6 +204,20 @@ public:
             sampleBuffer->set(TEXTURE_COLOR_R, num, r);
             sampleBuffer->set(TEXTURE_COLOR_G, num, g);
             sampleBuffer->set(TEXTURE_COLOR_B, num, b);
+
+            if(!(bsdf->getType() & (BSDF::EDeltaReflection | BSDF::EDeltaTransmission)))
+            {
+                sampleBuffer->set(WORLD_X_NS, its.p.x);
+                sampleBuffer->set(WORLD_Y_NS, its.p.y);
+                sampleBuffer->set(WORLD_Z_NS, its.p.z);
+                sampleBuffer->set(NORMAL_X_NS, its.shFrame.n.x);
+                sampleBuffer->set(NORMAL_Y_NS, its.shFrame.n.y);
+                sampleBuffer->set(NORMAL_Z_NS, its.shFrame.n.z);
+                diffReflectance.toLinearRGB(r, g, b);
+                sampleBuffer->set(TEXTURE_COLOR_R_NS, r);
+                sampleBuffer->set(TEXTURE_COLOR_G_NS, g);
+                sampleBuffer->set(TEXTURE_COLOR_B_NS, b);
+            }
         }
 
 		/* ==================================================================== */
