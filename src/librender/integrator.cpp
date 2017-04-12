@@ -491,12 +491,13 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 #else
             spec *= Li(sensorRay, rRec, nullptr);
 #endif
-			block->put(samplePos, spec, rRec.alpha);
+            bool validSample = block->put(samplePos, spec, rRec.alpha);
 			sampler->advance();
 
 #ifdef BENCHMARK_SERVER_ON
-            float r, g, b;
-            spec.toLinearRGB(r, g, b);
+            float r = 0.f, g = 0.f, b = 0.f;
+            if(validSample)
+                spec.toLinearRGB(r, g, b);
             sampleBuffer.set(COLOR_R, r);
             sampleBuffer.set(COLOR_G, g);
             sampleBuffer.set(COLOR_B, b);
