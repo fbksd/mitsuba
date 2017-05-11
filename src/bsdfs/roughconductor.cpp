@@ -434,7 +434,11 @@ public:
 	Float getRoughness(const Intersection &its, int component) const {
 		return 0.5f * (m_alphaU->eval(its).average()
 			+ m_alphaV->eval(its).average());
-	}
+    }
+
+    Spectrum getDiffuseReflectance(const Intersection &its) const {
+        return m_specularReflectance->eval(its);
+    }
 
 	std::string toString() const {
 		std::ostringstream oss;

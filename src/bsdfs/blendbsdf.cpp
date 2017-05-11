@@ -269,6 +269,14 @@ public:
 		return m_bsdfs[bsdfIndex]->getRoughness(its, component);
 	}
 
+    Spectrum getDiffuseReflectance(const Intersection &its) const {
+        Float weight = std::min((Float) 1.0f, std::max((Float) 0.0f,
+            m_weight->eval(its).average()));
+
+        return m_bsdfs[0]->getDiffuseReflectance(its) * (1-weight) +
+            m_bsdfs[1]->getDiffuseReflectance(its) * weight;
+    }
+
 	void addChild(const std::string &name, ConfigurableObject *child) {
 		if (child->getClass()->derivesFrom(MTS_CLASS(BSDF))) {
 			BSDF *bsdf = static_cast<BSDF *>(child);

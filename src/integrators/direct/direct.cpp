@@ -252,8 +252,8 @@ public:
             // Write light sample
             if(sampleBuffer && rRec.depth == 1 && numDirectSamples)
             {
-                sampleBuffer->set(LIGHT_X, sampleArray[0].x);
-                sampleBuffer->set(LIGHT_Y, sampleArray[0].y);
+                sampleArray[0].x = sampleBuffer->set(LIGHT_X, sampleArray[0].x);
+                sampleArray[0].y = sampleBuffer->set(LIGHT_Y, sampleArray[0].y);
             }
 
 			/* Only use direct illumination sampling when the surface's
