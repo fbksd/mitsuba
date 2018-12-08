@@ -22,7 +22,7 @@ endif()
 # libraries will allow transitive linking.
 add_library(mtsconverter_lib STATIC ${SRCS})
 target_link_libraries(mtsconverter_lib
-	${COLLADA_LIBRARIES} ${XERCES_LIBRARIES} ${OPENGL_glu_LIBRARY})
+    ${COLLADA_LIBRARIES} ${XERCES_LIBRARIES} ${OPENGL_glu_LIBRARY} fbksd::renderer)
 
 add_mts_exe(mtsimport mtsimport.cpp ${SRCS}
   ${MTS_DARWIN_STUB} ${MTS_WINDOWS_STUB} MTS_HW LINK_LIBRARIES mtsconverter_lib

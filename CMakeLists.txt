@@ -58,10 +58,9 @@ if(MSVC)
 endif()
 
 # turn on c++11
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_STANDARD 11)
 # Benchmark lib
-include_directories(${PROJECT_SOURCE_DIR}/../../Benchmark/include)
-link_directories(${PROJECT_BINARY_DIR}/../../Benchmark)
+find_package(fbksd REQUIRED)
 
 # Set CMAKE_BUILD_TYPE to Release by default
 if (MTS_CMAKE_INIT AND DEFINED CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE)
@@ -191,3 +190,5 @@ add_subdirectory(src/tests)
 
 # Use a subdirectory to enforce that packaging runs after all other targets
 add_subdirectory(data/cmake/packaging)
+
+install(FILES info.json DESTINATION .)

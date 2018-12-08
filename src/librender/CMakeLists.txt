@@ -91,14 +91,8 @@ add_definitions(-DMTS_BUILD_MODULE=MTS_MODULE_RENDER)
 
 include_directories(${ZLIB_INCLUDE_DIRS} ${XERCES_INCLUDE_DIRS})
 
-#Qt
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-find_package(Qt5Core)
-find_package(Qt5Network)
-
 add_mts_corelib(mitsuba-render ${HDRS} ${SRCS} LINK_LIBRARIES
-  mitsuba-core Qt5::Core Qt5::Network RenderingServer BenchmarkCore -lrt ${XERCES_LIBRARIES})
+  mitsuba-core fbksd::renderer ${XERCES_LIBRARIES})
 # Make sure the schema is where expected by the scene handler
 add_dependencies(mitsuba-render scene_schema)
 

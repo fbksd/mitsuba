@@ -23,7 +23,7 @@
 #include <mitsuba/core/netobject.h>
 #include <mitsuba/core/properties.h>
 #include <mitsuba/render/shape.h>
-#include "Benchmark/Core/SampleLayout.h"
+#include <fbksd/core/SampleLayout.h>
 
 class SceneInfo;
 class CropWindow;
@@ -430,9 +430,7 @@ public:
 
     // Implements the RenderingServer benchmark API
     void getSceneInfo(SceneInfo *scene);
-    void evaluateSamples(bool isSPP, int numSamples, int* resultSize);
-    void evaluateSamples(bool isSPP, int numSamples, const CropWindow& crop, int* resultSize);
-    void evaluateSamples(bool isSPP, int numSamples, const float* pdf, int* resultSize);
+    bool evaluateSamples(int64_t spp, int64_t remainingCount);
 
 	MTS_DECLARE_CLASS()
 protected:

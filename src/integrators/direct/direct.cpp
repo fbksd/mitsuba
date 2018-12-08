@@ -17,7 +17,7 @@
 */
 
 #include <mitsuba/render/scene.h>
-#include "Benchmark/RenderingServer/samples.h"
+#include <fbksd/renderer/SamplesPipe.h>
 
 MTS_NAMESPACE_BEGIN
 
