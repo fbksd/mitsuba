@@ -24,11 +24,14 @@
 #include <mitsuba/core/properties.h>
 #include <mitsuba/render/shape.h>
 #include <fbksd/core/SampleLayout.h>
+using namespace fbksd;
 
-class SceneInfo;
-class CropWindow;
-class SamplesPipe;
-class SampleBuffer;
+namespace fbksd {
+	class SceneInfo;
+	class CropWindow;
+	class SamplesPipe;
+	class SampleBuffer;
+}
 
 MTS_NAMESPACE_BEGIN
 
