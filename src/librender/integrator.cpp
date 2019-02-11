@@ -23,6 +23,7 @@
 #include <mitsuba/core/plugin.h>
 #include <mitsuba/core/random.h>
 #include <fbksd/renderer/RenderingServer.h>
+#include <iostream>
 
 #define BENCHMARK_SERVER_ON
 
@@ -32,7 +33,7 @@ MTS_NAMESPACE_BEGIN
 class PixelSampler
 {
 public:
-    PixelSampler(int beginx, int endx, int beginy, int endy, int n, bool isSPP)
+    PixelSampler(int beginx, int endx, int beginy, int endy, int n)
     {
         m_beginX = beginx;
         m_endX = endx;
@@ -40,78 +41,29 @@ public:
         m_endY = endy;
         m_width = m_endX - m_beginX;
         m_height = m_endY - m_beginY;
-        m_xPos = m_beginX;
-        m_yPos = m_beginY;
-        m_sparseSampleIndex = 0;
+        m_sampleIndex = 0;
         m_random = new Random();
-
-        if(isSPP)
-        {
-            m_spp = n;
-            m_sparseSampleCount = 0;
-        }
-        else
-        {
-            m_spp = n / (float)(m_width*m_height);
-            m_sparseSampleCount = n % (m_width*m_height);
-        }
-
-        if(m_sparseSampleCount)
-            m_stage = SPARSE;
-        if(m_spp)
-            m_stage = SPP;
+        m_numSamples = n;
     }
 
     virtual bool nextPixel(Point2i* pos)
     {
-        int x = m_xPos, y = m_yPos;
-
-        switch(m_stage)
-        {
-            case SPP:
-                if(m_yPos == m_endY || m_xPos == m_endX)
-                {
-                    m_stage = SPARSE;
-                    goto SPARSE_CASE;
-                }
-
-                if(++m_xPos == m_endX)
-                {
-                    m_xPos = m_beginX;
-                    ++m_yPos;
-                }
-                break;
-            case SPARSE:
-                SPARSE_CASE:
-                if(m_sparseSampleIndex++ == m_sparseSampleCount)
-                    return false;
-                x = m_beginX + m_random->nextUInt(m_width);
-                y = m_beginY + m_random->nextUInt(m_height);
-        }
-
-        pos->x = x;
-        pos->y = y;
+        if(m_sampleIndex++ == m_numSamples)
+            return false;
+        pos->x = m_beginX + m_random->nextUInt(m_width);
+        pos->y = m_beginY + m_random->nextUInt(m_height);
         return true;
     }
 
 protected:
-    enum Stage
-    {
-        SPP,
-        SPARSE
-    };
-
     int m_beginX;
     int m_endX;
     int m_beginY;
     int m_endY;
     int m_width;
     int m_height;
-    int m_xPos, m_yPos;
-    int m_spp;
-    int m_sparseSampleCount;
-    int m_sparseSampleIndex;
-    Stage m_stage;
+    int m_numSamples;
+    int m_sampleIndex;
     ref<Random> m_random;
 };
 
@@ -207,6 +159,7 @@ bool SamplingIntegrator::render(Scene *scene,
     m_originalSampler = static_cast<Sampler *>(sched->getResource(samplerResID, 0));
 
     RenderingServer server;
+    server.onGetTileSize([](){ return 32; });
     server.onSetParameters([this](const SampleLayout& layout){
         m_layout = layout;
     });
@@ -215,8 +168,21 @@ bool SamplingIntegrator::render(Scene *scene,
         this->getSceneInfo(&info);
         return info;
     });
-    server.onEvaluateSamples([this](int64_t spp, int64_t remainingCount){
-        return this->evaluateSamples(spp, remainingCount);
+    server.onEvaluateSamples([this](int64_t spp, int64_t remainingCount, int pipeSize){
+        this->evaluateSamples(spp, remainingCount, pipeSize);
+    });
+    server.onLastTileConsumed([this](){
+        if(m_process)
+        {
+            Scheduler::getInstance()->wait(m_process);
+            m_process = nullptr;
+        }
+        if(m_sparseProcess)
+        {
+            Scheduler::getInstance()->wait(m_sparseProcess);
+            m_sparseProcess = nullptr;
+        }
+        Scheduler::getInstance()->unregisterResource(m_integratorResID);
     });
     server.run();
     return true;
@@ -265,7 +231,7 @@ void SamplingIntegrator::wakeup(ConfigurableObject *parent,
 
 void SamplingIntegrator::renderBlock(const Scene *scene,
 		const Sensor *sensor, Sampler *sampler, ImageBlock *block,
-        const bool &stop, const std::vector< TPoint2<uint8_t> > &points, size_t pipeOffset, bool seekPipeByPixel) const {
+        const bool &stop, const std::vector< TPoint2<uint8_t> > &points, bool seekPipeByPixel) const {
 
 	Float diffScaleFactor = 1.0f /
 		std::sqrt((Float) sampler->getSampleCount());
@@ -286,9 +252,10 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 		queryType &= ~RadianceQueryRecord::EOpacity;
 
 #ifdef BENCHMARK_SERVER_ON
-    SamplesPipe pipe;
-    if(!seekPipeByPixel)
-        pipe.seek(pipeOffset);
+    const auto& blockOffset = Vector2i(block->getOffset());
+    SamplesPipe pipe({blockOffset.x, blockOffset.y},
+                     {blockOffset.x + block->getWidth(), blockOffset.y + block->getHeight()},
+                     points.size() * sampler->getSampleCount());
 #endif
 
 	for (size_t i = 0; i<points.size(); ++i) {
@@ -300,7 +267,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
 #ifdef BENCHMARK_SERVER_ON
         if(seekPipeByPixel)
-            pipe.seek(offset.x, offset.y, sampler->getSampleCount(), sensor->getFilm()->getSize().x);
+            pipe.seek(offset.x, offset.y);
 #endif
 
 		for (size_t j = 0; j<sampler->getSampleCount(); j++) {
@@ -355,115 +322,19 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             pipe << sampleBuffer;
 #endif
 		}
-	}
-}
-
-void SamplingIntegrator::getSceneInfo(SceneInfo *info)
-{
-    Vector2i filmSize = m_sensor->getFilm()->getSize();
-    info->set<int>("width", filmSize.x);
-    info->set<int>("height", filmSize.y);
-    float shutterOpen = m_sensor->getShutterOpen();
-    float shutterTime = m_sensor->getShutterOpenTime();
-    info->set<float>("shutter_open", shutterOpen);
-    info->set<float>("shutter_close", shutterOpen + shutterTime);
-    info->set<bool>("has_motion_blur", shutterTime > 0.0001f);
-    size_t sampleCount = m_originalSampler->getSampleCount();
-    info->set<int>("max_spp", sampleCount);
-    info->set<int>("max_samples", sampleCount*filmSize.x*filmSize.y);
-
-    // TODO:
-//    auto shapes = m_scene->getShapes();
-//    bool hasAreaLights = false;
-//    for(Shape* shape : shapes)
-//    {
-//        shape->isEmitter()
-//        if(light->IsDeltaLight() == false)
-//        {
-//            hasAreaLights = true;
-//            break;
-//        }
-//    }
-//    info->set<bool>("has_area_lights", hasAreaLights);
-}
-
-bool SamplingIntegrator::evaluateSamples(int64_t spp, int64_t remaining)
-{
-    auto sensorSize = m_sensor->getFilm()->getSize();
-    int64_t numPixels = sensorSize.x * sensorSize.y;
-    bool hasInputParams = m_layout.hasInput("IMAGE_X") || m_layout.hasInput("IMAGE_Y");
-
-    if(spp)
-    {
-        ref<Scheduler> sched = Scheduler::getInstance();
-        // replace the sampler that comes with the scene by one with spp samples
-        sched->unregisterResource(m_samplerResID);
-        Properties p;
-        if(math::isPowerOfTwo(spp))
-            p = Properties("ldsampler");
-        else
-            p = Properties("independent");
-        p.setInteger("sampleCount", spp);
-        ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), p));
-        std::vector<SerializableObject *> samplers(sched->getCoreCount());
-        for (size_t i=0; i<sched->getCoreCount(); ++i) {
-            ref<Sampler> clonedSampler = sampler->clone();
-            clonedSampler->incRef();
-            samplers[i] = clonedSampler.get();
-        }
-        m_samplerResID = sched->registerMultiResource(samplers);
-        for (size_t i=0; i<sched->getCoreCount(); ++i)
-            samplers[i]->decRef();
-        ref<Sensor> sensor = static_cast<Sensor *>(sched->getResource(m_sensorResID));
-        ref<Film> film = sensor->getFilm();
-        size_t nCores = sched->getCoreCount();
-        size_t sampleCount = sampler->getSampleCount();
-
-        Log(EInfo, "Starting render job (%ix%i, " SIZE_T_FMT " %s, " SIZE_T_FMT
-            " %s, " SSE_STR ") ..", film->getCropSize().x, film->getCropSize().y,
-            sampleCount, sampleCount == 1 ? "sample" : "samples", nCores,
-            nCores == 1 ? "core" : "cores");
-
-        /* This is a sampling-based integrator - parallelize */
-        ref<ParallelProcess> proc = new BlockedRenderProcess(m_job, m_queue, m_scene->getBlockSize(), spp, m_layout.getSampleSize(), !hasInputParams);
-        int integratorResID = sched->registerResource(this);
-        proc->bindResource("integrator", integratorResID);
-        proc->bindResource("scene", m_sceneResID);
-        proc->bindResource("sensor", m_sensorResID);
-        proc->bindResource("sampler", m_samplerResID);
-        m_scene->bindUsedResources(proc);
-        bindUsedResources(proc);
-        sched->schedule(proc);
-
-        m_process = proc;
-        sched->wait(proc);
-        m_process = NULL;
-        sched->unregisterResource(integratorResID);
     }
-
-    if(remaining)
-    {
-        auto sensorSize = m_sensor->getFilm()->getSize();
-        Properties p("independent");
-        p.setInteger("sampleCount", 1);
-        ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), p));
-        PixelSampler pixelSampler(0, sensorSize.x, 0, sensorSize.y, remaining, false);
-        SamplesPipe pipe;
-        pipe.seek(spp * numPixels * m_layout.getSampleSize());
-        render(sampler.get(), &pixelSampler, pipe);
-    }
-
-    return true;
 }
 
-void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler, SamplesPipe& pipe)
+void SamplingIntegrator::renderSamples(const Scene *scene, const Sensor *sensor, Sampler *sampler, int numSamples) const
 {
+    const auto sensorSize = sensor->getFilm()->getSize();
+    SamplesPipe pipe({0, 0}, {sensorSize.x, sensorSize.y}, numSamples);
+
     Float diffScaleFactor = 1.0f / std::sqrt((Float) sampler->getSampleCount());
-
     bool needsApertureSample = m_sensor->needsApertureSample();
     bool needsTimeSample = m_sensor->needsTimeSample();
 
-    RadianceQueryRecord rRec(m_scene, sampler);
+    RadianceQueryRecord rRec(scene, sampler);
     Point2 apertureSample(0.5f);
     Float timeSample = 0.5f;
     RayDifferential sensorRay;
@@ -473,8 +344,9 @@ void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler, Sa
     if (!m_sensor->getFilm()->hasAlpha()) /* Don't compute an alpha channel if we don't have to */
         queryType &= ~RadianceQueryRecord::EOpacity;
 
+    PixelSampler pixelSampler(0, sensorSize.x, 0, sensorSize.y, numSamples);
     Point2i offset;
-    while(pixelSampler->nextPixel(&offset))
+    while(pixelSampler.nextPixel(&offset))
     {
         sampler->generate(offset);
 
@@ -522,6 +394,125 @@ void SamplingIntegrator::render(Sampler* sampler, PixelSampler* pixelSampler, Sa
         }
     }
 }
+
+void SamplingIntegrator::getSceneInfo(SceneInfo *info)
+{
+    Vector2i filmSize = m_sensor->getFilm()->getSize();
+    info->set<int>("width", filmSize.x);
+    info->set<int>("height", filmSize.y);
+    float shutterOpen = m_sensor->getShutterOpen();
+    float shutterTime = m_sensor->getShutterOpenTime();
+    info->set<float>("shutter_open", shutterOpen);
+    info->set<float>("shutter_close", shutterOpen + shutterTime);
+    info->set<bool>("has_motion_blur", shutterTime > 0.0001f);
+    size_t sampleCount = m_originalSampler->getSampleCount();
+    info->set<int>("max_spp", sampleCount);
+    info->set<int>("max_samples", sampleCount*filmSize.x*filmSize.y);
+
+    // TODO:
+//    auto shapes = m_scene->getShapes();
+//    bool hasAreaLights = false;
+//    for(Shape* shape : shapes)
+//    {
+//        shape->isEmitter()
+//        if(light->IsDeltaLight() == false)
+//        {
+//            hasAreaLights = true;
+//            break;
+//        }
+//    }
+//    info->set<bool>("has_area_lights", hasAreaLights);
+}
+
+void SamplingIntegrator::evaluateSamples(int64_t spp, int64_t remaining, int pipeSize)
+{
+    bool hasInputParams = m_layout.hasInput("IMAGE_X") || m_layout.hasInput("IMAGE_Y");
+
+    if(spp)
+    {
+        ref<Scheduler> sched = Scheduler::getInstance();
+        // replace the sampler that comes with the scene by one with spp samples
+        sched->unregisterResource(m_samplerResID);
+        Properties p;
+        if(math::isPowerOfTwo(spp))
+            p = Properties("ldsampler");
+        else
+            p = Properties("independent");
+        p.setInteger("sampleCount", spp);
+        ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), p));
+        std::vector<SerializableObject *> samplers(sched->getCoreCount());
+        for (size_t i=0; i<sched->getCoreCount(); ++i) {
+            ref<Sampler> clonedSampler = sampler->clone();
+            clonedSampler->incRef();
+            samplers[i] = clonedSampler.get();
+        }
+        m_samplerResID = sched->registerMultiResource(samplers);
+        for (size_t i=0; i<sched->getCoreCount(); ++i)
+            samplers[i]->decRef();
+        ref<Sensor> sensor = static_cast<Sensor *>(sched->getResource(m_sensorResID));
+        ref<Film> film = sensor->getFilm();
+        size_t nCores = sched->getCoreCount();
+        size_t sampleCount = sampler->getSampleCount();
+
+        Log(EInfo, "Starting render job (%ix%i, " SIZE_T_FMT " %s, " SIZE_T_FMT
+            " %s, " SSE_STR ") ..", film->getCropSize().x, film->getCropSize().y,
+            sampleCount, sampleCount == 1 ? "spp" : "spps", nCores,
+            nCores == 1 ? "core" : "cores");
+
+        /* This is a sampling-based integrator - parallelize */
+        ref<ParallelProcess> proc = new BlockedRenderProcess(m_job, m_queue, m_scene->getBlockSize(), spp, m_layout.getSampleSize(), !hasInputParams);
+        m_integratorResID = sched->registerResource(this);
+        proc->bindResource("integrator", m_integratorResID);
+        proc->bindResource("scene", m_sceneResID);
+        proc->bindResource("sensor", m_sensorResID);
+        proc->bindResource("sampler", m_samplerResID);
+        m_scene->bindUsedResources(proc);
+        bindUsedResources(proc);
+        sched->schedule(proc);
+        m_process = proc;
+    }
+
+    if(remaining)
+    {
+        ref<Scheduler> sched = Scheduler::getInstance();
+        // replace the sampler that comes with the scene by one with spp samples
+        sched->unregisterResource(m_samplerResID);
+        Properties p("independent");
+        p.setInteger("sampleCount", 1);
+        ref<Sampler> sampler = static_cast<Sampler*>(PluginManager::getInstance()->createObject(MTS_CLASS(Sampler), p));
+        std::vector<SerializableObject *> samplers(sched->getCoreCount());
+        for (size_t i=0; i<sched->getCoreCount(); ++i) {
+            ref<Sampler> clonedSampler = sampler->clone();
+            clonedSampler->incRef();
+            samplers[i] = clonedSampler.get();
+        }
+        m_samplerResID = sched->registerMultiResource(samplers);
+        for (size_t i=0; i<sched->getCoreCount(); ++i)
+            samplers[i]->decRef();
+        ref<Sensor> sensor = static_cast<Sensor *>(sched->getResource(m_sensorResID));
+        ref<Film> film = sensor->getFilm();
+        size_t nCores = sched->getCoreCount();
+
+        Log(EInfo, "Starting render job (%ix%i, " SIZE_T_FMT " %s, " SIZE_T_FMT
+            " %s, " SSE_STR ") ..", film->getCropSize().x, film->getCropSize().y,
+            remaining, "samples", nCores,
+            nCores == 1 ? "core" : "cores");
+
+        /* This is a sampling-based integrator - parallelize */
+        ref<ParallelProcess> proc = new SparseRenderProcess(m_job, m_queue, remaining, pipeSize);
+        if(!spp)
+            m_integratorResID = sched->registerResource(this);
+        proc->bindResource("integrator", m_integratorResID);
+        proc->bindResource("scene", m_sceneResID);
+        proc->bindResource("sensor", m_sensorResID);
+        proc->bindResource("sampler", m_samplerResID);
+        m_scene->bindUsedResources(proc);
+        bindUsedResources(proc);
+        sched->schedule(proc);
+        m_sparseProcess = proc;
+    }
+}
+
 
 MonteCarloIntegrator::MonteCarloIntegrator(const Properties &props) : SamplingIntegrator(props) {
 	/* Depth to begin using russian roulette */

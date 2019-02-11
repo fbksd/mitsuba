@@ -403,7 +403,10 @@ public:
 	 */
 	virtual void renderBlock(const Scene *scene, const Sensor *sensor,
 		Sampler *sampler, ImageBlock *block, const bool &stop,
-        const std::vector< TPoint2<uint8_t> > &points, size_t pipeOffset, bool seekPipeByPixel) const;
+        const std::vector< TPoint2<uint8_t> > &points, bool seekPipeByPixel) const;
+
+    virtual void renderSamples(const Scene *scene, const Sensor *sensor,
+        Sampler *sampler, int numSamples) const;
 
 	/**
 	 * <tt>NetworkedObject</tt> implementation:
@@ -433,7 +436,7 @@ public:
 
     // Implements the RenderingServer benchmark API
     void getSceneInfo(SceneInfo *scene);
-    bool evaluateSamples(int64_t spp, int64_t remainingCount);
+    void evaluateSamples(int64_t spp, int64_t remainingCount, int pipeSize);
 
 	MTS_DECLARE_CLASS()
 protected:
@@ -448,10 +451,12 @@ protected:
 protected:
 	/// Used to temporarily cache a parallel process while it is in operation
 	ref<ParallelProcess> m_process;
+    ref<ParallelProcess> m_sparseProcess;
+    int m_integratorResID;
 
 private:
     // Benchmark stuff
-    void render(Sampler* sampler, PixelSampler* pixelSampler, SamplesPipe& pipe);
+//    void render(Sampler* sampler, PixelSampler* pixelSampler, SamplesPipe& pipe);
 
     int maxSPP;
     SampleLayout m_layout;

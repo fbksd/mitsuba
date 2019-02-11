@@ -41,11 +41,9 @@ public:
 
 	inline const Point2i &getOffset() const { return m_offset; }
 	inline const Vector2i &getSize() const { return m_size; }
-    inline size_t getPipeOffset() const { return m_pipeOffset; }
 
 	inline void setOffset(const Point2i &offset) { m_offset = offset; }
 	inline void setSize(const Vector2i &size) { m_size = size; }
-    inline void setPipeOffset(size_t pipeOffset) { m_pipeOffset = pipeOffset; }
 
 	std::string toString() const;
 
@@ -56,41 +54,8 @@ protected:
 private:
 	Point2i m_offset;
 	Vector2i m_size;
-    size_t m_pipeOffset;
 };
 
-
-
-/**
- * \brief Work unit that specifies a contiguous region of memory.
- *
- * Used in the rendering server for the benchmark system.
- */
-class MTS_EXPORT_RENDER ContiguousWorkUnit : public WorkUnit {
-public:
-    inline ContiguousWorkUnit() { }
-
-    /* WorkUnit implementation */
-    void set(const WorkUnit *wu);
-    void load(Stream *stream);
-    void save(Stream *stream) const;
-
-    inline size_t getOffset() const { return m_offset; }
-    inline int getNumSamples() const { return m_numSamples; }
-
-    inline void setOffset(size_t offset) { m_offset = offset; }
-    inline void setNumSamples(int numSamples) { m_numSamples = numSamples; }
-
-    std::string toString() const;
-
-    MTS_DECLARE_CLASS()
-protected:
-    /// Virtual destructor
-    virtual ~ContiguousWorkUnit() { }
-private:
-    size_t m_offset;
-    int m_numSamples;
-};
 
 MTS_NAMESPACE_END
 

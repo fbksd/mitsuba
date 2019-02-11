@@ -25,7 +25,7 @@ MTS_NAMESPACE_BEGIN
 /*                          BlockedImageProcess                         */
 /* ==================================================================== */
 
-void BlockedImageProcess::init(const Point2i &offset, const Vector2i &size, uint32_t blockSize, int spp, int sampleSize) {
+void BlockedImageProcess::init(const Point2i &offset, const Vector2i &size, uint32_t blockSize, int spp) {
 	m_offset = offset;
 	m_size = size;
 	m_blockSize = (int) blockSize;
@@ -39,8 +39,6 @@ void BlockedImageProcess::init(const Point2i &offset, const Vector2i &size, uint
 	m_stepsLeft = 1;
 	m_numSteps = 1;
     m_spp = spp;
-    m_sampleSize = sampleSize;
-    m_currentPipeOffset = 0;
 }
 
 ParallelProcess::EStatus BlockedImageProcess::generateWork(WorkUnit *unit, int worker) {
@@ -55,8 +53,6 @@ ParallelProcess::EStatus BlockedImageProcess::generateWork(WorkUnit *unit, int w
 	rect.setSize(Vector2i(
 		std::min(m_size.x-pos.x, m_blockSize),
 		std::min(m_size.y-pos.y, m_blockSize)));
-    rect.setPipeOffset(m_currentPipeOffset);
-    m_currentPipeOffset += rect.getSize().x * rect.getSize().y * m_spp * m_sampleSize;
 
 	if (++m_numBlocksGenerated == m_numBlocksTotal)
 		return ESuccess;

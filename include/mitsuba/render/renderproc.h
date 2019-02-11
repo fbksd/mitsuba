@@ -100,30 +100,10 @@ private:
 
 class MTS_EXPORT_RENDER SparseRenderProcess : public ParallelProcess {
 public:
-    SparseRenderProcess(const RenderJob *parent, RenderQueue *queue,
-        int numSamples);
-
-    /**
-     * \brief Set the pixel format associated with the rendering process
-     *
-     * By default, this class works with image blocks that store a set
-     * of spectral samples along with an alpha value and an accumulated
-     * reconstruction filter weight for each pixel. This method can be
-     * used to change this, which is useful when additional information
-     * should be returned (e.g. normals or depth values).
-     *
-     * \param pixelFormat
-     *    Desired pixel format (e.g. \ref Bitmap::EMultiChannel)
-     * \param channelCount
-     *    Number of image channels. Only needs to be specified when
-     *    setting <tt>pixelFormat=Bitmap::EMultiChannel</tt>
-     * \param warnInvalid
-     *    By default, the rendering process issues a warning when writing
-     *    negative, infinite or NaN-valued pixels. This flag can be used
-     *    to turn off the warnings.
-     */
-    void setPixelFormat(Bitmap::EPixelFormat pixelFormat,
-        int channelCount = -1, bool warnInvalid = false);
+    SparseRenderProcess(const RenderJob *parent,
+                        RenderQueue *queue,
+                        int numSamples,
+                        int pipeSize);
 
     // ======================================================================
     //! @{ \name Implementation of the ParallelProcess interface
@@ -131,8 +111,8 @@ public:
 
     ref<WorkProcessor> createWorkProcessor() const;
     void processResult(const WorkResult *result, bool cancelled);
-    void bindResource(const std::string &name, int id);
     EStatus generateWork(WorkUnit *unit, int worker);
+    void bindResource(const std::string &name, int id);
 
     //! @}
     // ======================================================================
@@ -141,19 +121,20 @@ public:
 protected:
     /// Virtual destructor
     virtual ~SparseRenderProcess();
+
 protected:
     ref<RenderQueue> m_queue;
     ref<Scene> m_scene;
     ref<Film> m_film;
     const RenderJob *m_parent;
-    int m_resultCount;
+    int m_allocatedSamples;
+    int m_workedSamples;
     ref<Mutex> m_resultMutex;
     ProgressReporter *m_progress;
-    int m_borderSize;
-    Bitmap::EPixelFormat m_pixelFormat;
-    int m_channelCount;
+    Vector2i m_imgSize;
+    int m_tileSize;
     int m_numSamples;
-    bool m_warnInvalid;
+    int m_numWorkUnits;
 };
 
 MTS_NAMESPACE_END
