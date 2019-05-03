@@ -251,7 +251,7 @@ public:
 		}
 	}
 
-    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, SampleBuffer*) const {
+    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, float, Spectrum*, SampleBuffer*) const {
 		NotImplementedError("Li");
 	}
 

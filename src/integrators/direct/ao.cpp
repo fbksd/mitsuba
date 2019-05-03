@@ -81,7 +81,7 @@ public:
 		return true;
 	}
 
-    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, SampleBuffer*) const {
+    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, float, Spectrum*, SampleBuffer*) const {
 		/* Some aliases and local variables */
 		Spectrum Li(0.0f);
 		Point2 sample;

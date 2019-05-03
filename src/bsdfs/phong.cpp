@@ -219,14 +219,14 @@ public:
 
 			/* Rotate into the correct coordinate system */
 			bRec.wo = Frame(R).toWorld(localDir);
-			bRec.sampledComponent = 1;
+            bRec.sampledComponent = 0;
 			bRec.sampledType = EGlossyReflection;
 
 			if (Frame::cosTheta(bRec.wo) <= 0)
 				return Spectrum(0.0f);
 		} else {
 			bRec.wo = warp::squareToCosineHemisphere(sample);
-			bRec.sampledComponent = 0;
+            bRec.sampledComponent = 1;
 			bRec.sampledType = EDiffuseReflection;
 		}
 		bRec.eta = 1.0f;

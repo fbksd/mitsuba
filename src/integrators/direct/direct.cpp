@@ -144,7 +144,7 @@ public:
 			sampler->request2DArray(m_bsdfSamples);
 	}
 
-    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, SampleBuffer* sampleBuffer) const {
+    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, float roughness, Spectrum* diffuse, SampleBuffer* sampleBuffer) const {
 		/* Some aliases and local variables */
 		const Scene *scene = rRec.scene;
 		Intersection &its = rRec.its;
@@ -157,19 +157,28 @@ public:
 		if (!rRec.rayIntersect(ray)) {
 			/* If no intersection could be found, possibly return
 			   radiance from a background emitter */
-			if (rRec.type & RadianceQueryRecord::EEmittedRadiance && !m_hideEmitters)
-				return scene->evalEnvironment(ray);
+            if (rRec.type & RadianceQueryRecord::EEmittedRadiance && !m_hideEmitters) {
+                auto Le = scene->evalEnvironment(ray);
+                *diffuse += Le;
+                return Le;
+            }
 			else
 				return Spectrum(0.0f);
 		}
 
 		/* Possibly include emitted radiance if requested */
-		if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance) && !m_hideEmitters)
-			Li += its.Le(-ray.d);
+        if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance) && !m_hideEmitters) {
+            auto Le = its.Le(-ray.d);
+            Li += Le;
+            *diffuse += Le;
+        }
 
 		/* Include radiance from a subsurface scattering model if requested */
-		if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance))
-			Li += its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
+        if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance)) {
+            auto LoSub = its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
+            Li += LoSub;
+            *diffuse += LoSub;
+        }
 
 		const BSDF *bsdf = its.getBSDF(ray);
 
@@ -283,6 +292,18 @@ public:
 
 						Li += value * bsdfVal * weight;
 					}
+
+                    {
+                        BSDFSamplingRecord bRec(its, its.toLocal(dRec.d));
+                        bRec.typeMask = BSDF::EDiffuse;
+                        const Spectrum bsdfVal = bsdf->eval(bRec);
+                        if (!bsdfVal.isZero() && (!m_strictNormals || dot(its.geoFrame.n, dRec.d) * Frame::cosTheta(bRec.wo) > 0))
+                        {
+                            Float bsdfPdf = emitter->isOnSurface() ? bsdf->pdf(bRec) : 0;
+                            const Float weight = miWeight(dRec.pdf * fracLum, bsdfPdf * fracBSDF) * weightLum;
+                            *diffuse += value * bsdfVal * weight;
+                        }
+                    }
 				}
 			}
 
@@ -315,6 +336,8 @@ public:
 			Spectrum bsdfVal = bsdf->sample(bRec, bsdfPdf, sampleArray[i]);
 			if (bsdfVal.isZero())
 				continue;
+
+            bool isDiffuse = (bRec.sampledType & BSDF::ESmooth) && bsdf->getRoughness(its, bRec.sampledComponent) >= roughness;
 
 			/* Prevent light leaks due to the use of shading normals */
 			const Vector wo = its.toWorld(bRec.wo);
@@ -354,7 +377,10 @@ public:
 			const Float weight = miWeight(bsdfPdf * fracBSDF,
 				lumPdf * fracLum) * weightBSDF;
 
-			Li += value * bsdfVal * weight;
+            auto tmp = value * bsdfVal * weight;
+            Li += tmp;
+            if(isDiffuse)
+                *diffuse += tmp;
 		}
 
 		return Li;

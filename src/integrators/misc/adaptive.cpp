@@ -284,8 +284,8 @@ public:
 		}
 	}
 
-    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, SampleBuffer* sampleBuffer) const {
-        return m_subIntegrator->Li(ray, rRec, sampleBuffer);
+    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, float roughness, Spectrum* diffuse, SampleBuffer* sampleBuffer) const {
+        return m_subIntegrator->Li(ray, rRec, roughness, diffuse, sampleBuffer);
 	}
 
 	Spectrum E(const Scene *scene, const Intersection &its, const Medium *medium,

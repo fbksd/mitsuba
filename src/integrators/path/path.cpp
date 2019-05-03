@@ -117,7 +117,7 @@ public:
 	MIPathTracer(Stream *stream, InstanceManager *manager)
 		: MonteCarloIntegrator(stream, manager) { }
 
-    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, SampleBuffer* sampleBuffer) const {
+    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, float roughness, Spectrum* diffuse, SampleBuffer* sampleBuffer) const {
         /* Some aliases and local variables */
 		const Scene *scene = rRec.scene;
 		Intersection &its = rRec.its;
@@ -135,13 +135,23 @@ public:
 
         bool firstNonSpecular = true;
 
+        enum class FirstItsType {
+            NONE,	 // first non-delta intersection not reached yet
+            DIFFUSE, // first non-delta intersection is diffuse
+            GLOSSY,  // //                           is glossy
+        } firstItsType = FirstItsType::NONE;
+
 		while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
 			if (!its.isValid()) {
 				/* If no intersection could be found, potentially return
 				   radiance from a environment luminaire if it exists */
 				if ((rRec.type & RadianceQueryRecord::EEmittedRadiance)
-					&& (!m_hideEmitters || scattered))
-					Li += throughput * scene->evalEnvironment(ray);
+                    && (!m_hideEmitters || scattered)) {
+                    auto env = scene->evalEnvironment(ray);
+                    Li += throughput * env;
+                    if(firstItsType == FirstItsType::DIFFUSE)
+                        *diffuse += throughput * env;
+                }
 				break;
 			}
 
@@ -189,12 +199,20 @@ public:
 
 			/* Possibly include emitted radiance if requested */
 			if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
-				&& (!m_hideEmitters || scattered))
-				Li += throughput * its.Le(-ray.d);
+                    && (!m_hideEmitters || scattered)) {
+                auto Le = its.Le(-ray.d);
+                Li += throughput * Le;
+                if(firstItsType == FirstItsType::DIFFUSE)
+                    *diffuse += throughput * Le;
+            }
 
 			/* Include radiance from a subsurface scattering model if requested */
-			if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance))
-				Li += throughput * its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
+            if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance)) {
+                auto LoSub = its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
+                Li += throughput * LoSub;
+                if(firstItsType == FirstItsType::DIFFUSE)
+                    *diffuse += throughput * LoSub;
+            }
 
 			if ((rRec.depth >= m_maxDepth && m_maxDepth > 0)
 				|| (m_strictNormals && dot(ray.d, its.geoFrame.n)
@@ -254,8 +272,25 @@ public:
 						/* Weight using the power heuristic */
 						Float weight = miWeight(dRec.pdf, bsdfPdf);
 						Li += throughput * value * bsdfVal * weight;
-					}
-				}
+                        if(firstItsType == FirstItsType::DIFFUSE)
+                            *diffuse += throughput * value * bsdfVal * weight;
+                    }
+
+                    if(firstItsType == FirstItsType::NONE)
+                    {
+                        BSDFSamplingRecord bRec(its, its.toLocal(dRec.d), ERadiance);
+                        bRec.typeMask = BSDF::EDiffuse;
+                        const Spectrum bsdfVal = bsdf->eval(bRec);
+                        if (!bsdfVal.isZero() && (!m_strictNormals || dot(its.geoFrame.n, dRec.d) * Frame::cosTheta(bRec.wo) > 0))
+                        {
+                            /* Calculate prob. of having generated that direction using BSDF sampling */
+                            Float bsdfPdf = (emitter->isOnSurface() && dRec.measure == ESolidAngle) ? bsdf->pdf(bRec) : 0;
+                            /* Weight using the power heuristic */
+                            Float weight = miWeight(dRec.pdf, bsdfPdf);
+                            *diffuse += throughput * value * bsdfVal * weight;
+                        }
+                    }
+                }
 			}
 
 			/* ==================================================================== */
@@ -266,6 +301,7 @@ public:
 			Float bsdfPdf;
 			BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
 			Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, rRec.nextSample2D());
+
 			if (bsdfWeight.isZero())
 				break;
 
@@ -311,6 +347,17 @@ public:
 			throughput *= bsdfWeight;
 			eta *= bRec.eta;
 
+            float sampledRoughness = bsdf->getRoughness(its, bRec.sampledComponent);
+            bool isDelta = (bRec.sampledType & BSDF::EDelta) || ((bRec.sampledType & BSDF::EGlossy) && (sampledRoughness < Epsilon));
+            if(firstItsType == FirstItsType::NONE && !isDelta)
+            {
+                bool isDiffuse = (bRec.sampledType & BSDF::ESmooth) && sampledRoughness >= roughness;
+                if(isDiffuse)
+                    firstItsType = FirstItsType::DIFFUSE;
+                else
+                    firstItsType = FirstItsType::GLOSSY;
+            }
+
 			/* If a luminaire was hit, estimate the local illumination and
 			   weight using the power heuristic */
 			if (hitEmitter &&
@@ -320,7 +367,9 @@ public:
 				const Float lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
 					scene->pdfEmitterDirect(dRec) : 0;
 				Li += throughput * value * miWeight(bsdfPdf, lumPdf);
-			}
+                if(firstItsType == FirstItsType::DIFFUSE)
+                    *diffuse += throughput * value * miWeight(bsdfPdf, lumPdf);
+            }
 
 			/* ==================================================================== */
 			/*                         Indirect illumination                        */
@@ -349,7 +398,7 @@ public:
 		avgPathLength.incrementBase();
 		avgPathLength += rRec.depth;
 
-		return Li;
+        return Li;
 	}
 
 	inline Float miWeight(Float pdfA, Float pdfB) const {
@@ -358,7 +407,7 @@ public:
 		return pdfA / (pdfA + pdfB);
 	}
 
-	void serialize(Stream *stream, InstanceManager *manager) const {
+    void serialize(Stream *stream, InstanceManager *manager) const {
 		MonteCarloIntegrator::serialize(stream, manager);
 	}
 

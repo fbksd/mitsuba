@@ -256,6 +256,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
     SamplesPipe pipe({blockOffset.x, blockOffset.y},
                      {blockOffset.x + block->getWidth(), blockOffset.y + block->getHeight()},
                      points.size() * sampler->getSampleCount());
+    float roughness = m_layout.getRoughnessThreshold();
 #endif
 
 	for (size_t i = 0; i<points.size(); ++i) {
@@ -299,13 +300,15 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             timeSample = sampleBuffer.set(TIME, timeSample);
 #endif
 
-            Spectrum spec = sensor->sampleRayDifferential(
+            Spectrum camWeight = sensor->sampleRayDifferential(
 				sensorRay, samplePos, apertureSample, timeSample);
 
 			sensorRay.scaleDifferential(diffScaleFactor);
 
 #ifdef BENCHMARK_SERVER_ON
-            spec *= Li(sensorRay, rRec, &sampleBuffer);
+            Spectrum diffuse(0.f);
+            Spectrum spec = camWeight * Li(sensorRay, rRec, roughness, &diffuse, &sampleBuffer);
+            diffuse *= camWeight;
 #else
             spec *= Li(sensorRay, rRec, nullptr);
 #endif
@@ -319,6 +322,14 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             sampleBuffer.set(COLOR_R, r);
             sampleBuffer.set(COLOR_G, g);
             sampleBuffer.set(COLOR_B, b);
+
+            r = g = b = 0.f;
+            if(validSample)
+                diffuse.toLinearRGB(r, g, b);
+            sampleBuffer.set(DIFFUSE_COLOR_R, r);
+            sampleBuffer.set(DIFFUSE_COLOR_G, g);
+            sampleBuffer.set(DIFFUSE_COLOR_B, b);
+
             pipe << sampleBuffer;
 #endif
 		}
@@ -333,6 +344,7 @@ void SamplingIntegrator::renderSamples(const Scene *scene, const Sensor *sensor,
     Float diffScaleFactor = 1.0f / std::sqrt((Float) sampler->getSampleCount());
     bool needsApertureSample = m_sensor->needsApertureSample();
     bool needsTimeSample = m_sensor->needsTimeSample();
+    float roughness = m_layout.getRoughnessThreshold();
 
     RadianceQueryRecord rRec(scene, sampler);
     Point2 apertureSample(0.5f);
@@ -381,13 +393,21 @@ void SamplingIntegrator::renderSamples(const Scene *scene, const Sensor *sensor,
 
             sensorRay.scaleDifferential(diffScaleFactor);
 
-            spec *= Li(sensorRay, rRec, &sampleBuffer);
+            Spectrum diffuse(0.f);
+            Spectrum l = spec * Li(sensorRay, rRec, roughness, &diffuse, &sampleBuffer);
 
             float r, g, b;
-            spec.toLinearRGB(r, g, b);
+            l.toLinearRGB(r, g, b);
             sampleBuffer.set(COLOR_R, r);
             sampleBuffer.set(COLOR_G, g);
             sampleBuffer.set(COLOR_B, b);
+
+            r = 0.f; g = 0.f; b = 0.f;
+            diffuse.toLinearRGB(r, g, b);
+            sampleBuffer.set(DIFFUSE_COLOR_R, r);
+            sampleBuffer.set(DIFFUSE_COLOR_G, g);
+            sampleBuffer.set(DIFFUSE_COLOR_B, b);
+
             pipe << sampleBuffer;
 
             sampler->advance();

@@ -327,10 +327,10 @@ class MTS_EXPORT_RENDER SamplingIntegrator : public Integrator {
 public:
 	/**
 	 * \brief Sample the incident radiance along a ray. Also requires
-	 * a radiance query record, which makes this request more precise.
+     * a radiance query record, which makes this request more precise.
 	 */
 	virtual Spectrum Li(const RayDifferential &ray,
-        RadianceQueryRecord &rRec, SampleBuffer* sampleBuffer = nullptr) const = 0;
+        RadianceQueryRecord &rRec, float roughness = 0.1f, Spectrum* diffuse = nullptr, SampleBuffer* sampleBuffer = nullptr) const = 0;
 
 	/**
 	 * \brief Estimate the irradiance at a given surface point

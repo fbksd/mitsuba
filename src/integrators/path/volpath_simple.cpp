@@ -85,7 +85,7 @@ public:
 	SimpleVolumetricPathTracer(Stream *stream, InstanceManager *manager)
 	 : MonteCarloIntegrator(stream, manager) { }
 
-    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, SampleBuffer*) const {
+    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, float, Spectrum*, SampleBuffer*) const {
 		/* Some aliases and local variables */
 		const Scene *scene = rRec.scene;
 		Intersection &its = rRec.its;

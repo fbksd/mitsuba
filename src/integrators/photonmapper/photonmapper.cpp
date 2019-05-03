@@ -393,7 +393,7 @@ public:
 			Scheduler::getInstance()->cancel(m_proc);
 	}
 
-    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, SampleBuffer*) const {
+    Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec, float, Spectrum*, SampleBuffer*) const {
 		Spectrum LiSurf(0.0f), LiMedium(0.0f), transmittance(1.0f);
 		Intersection &its = rRec.its;
 		const Scene *scene = rRec.scene;
